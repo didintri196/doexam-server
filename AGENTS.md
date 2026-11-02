@@ -246,7 +246,7 @@ Untuk 4xx, pesan dari `errr.WithMessage` (mis. "setup already completed", "inval
 - **Multi-tenant**: setiap query ke tabel ber-`tenant_id` harus berjalan di transaksi `dbpg.TxManager.WithTenant` (meng-`set_config('app.tenant_id', ..., true)` = `SET LOCAL`). RLS di DB menolak sisanya. Jangan menulis ulang per repo. Transaksi tenant tidak boleh bersarang (`dbpg.ErrNestedTx`). Tabel `tenants` sendiri tidak ber-RLS.
 - **RLS tidak berlaku untuk pemilik tabel.** Migrasi dijalankan dengan role pemilik, sedangkan aplikasi di staging/production **wajib** konek dengan role terpisah yang bukan pemilik tabel (hanya `SELECT/INSERT/UPDATE/DELETE`). Di development, role pemilik masih boleh dipakai.
 - Operasi yang mengubah beberapa tabel sekaligus wajib dalam **satu transaksi**.
-- Hormati invariant skema ([08-DATABASE-MVP](../../DOCS/PLAN/08-DATABASE-MVP.md)):
+- Hormati invariant skema (dirancang di `DOCS/PLAN/08-DATABASE-MVP.md` repo utama; ditegakkan oleh migrasi):
   - `item_versions`/`stimulus_versions` yang `locked_at` terisi **tidak boleh** diubah isinya. Buat versi baru.
   - `attempt_events` & `audit_logs` **append-only**.
   - Sinkron event jawaban harus idempoten (`ON CONFLICT (attempt_id, client_event_id) DO NOTHING`).

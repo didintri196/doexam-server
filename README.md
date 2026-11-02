@@ -32,7 +32,7 @@ Server berjalan di `http://localhost:8080`.
 
 ## Database & Migrasi
 
-Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate) di `migrations/`. Desainnya ada di [DOCS/PLAN/08-DATABASE-MVP.md](../../DOCS/PLAN/08-DATABASE-MVP.md).
+Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate) di `migrations/`. Rancangan awalnya ada di dokumen perencanaan proyek (`DOCS/PLAN/08-DATABASE-MVP.md`, di luar repo ini); file migrasi adalah sumber kebenarannya.
 
 | # | Migrasi | Isi |
 |---|---------|-----|
@@ -144,7 +144,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 
 🔒 = butuh header `Authorization: Bearer <token>`; kode setelahnya = izin yang dibutuhkan. Membaca grup cukup salah satu dari `group.manage`, `user.manage`, `session.manage`.
 
-Impor `users` butuh `user.manage`, impor `groups` butuh `group.manage`. Alur: unduh template → isi → unggah → periksa `errors` → commit → unduh kredensial. Impor grup dulu bila kolom `groups` di file pengguna merujuk grup baru. Detail keputusan: [08-DATABASE-MVP §10](../../DOCS/PLAN/08-DATABASE-MVP.md).
+Impor `users` butuh `user.manage`, impor `groups` butuh `group.manage`. Alur: unduh template → isi → unggah → periksa `errors` → commit → unduh kredensial. Impor grup dulu bila kolom `groups` di file pengguna merujuk grup baru. File diproses di latar belakang dalam satu transaksi (semua baris masuk atau tidak sama sekali); password sementara hanya disimpan di memori selama 1 jam.
 
 Akses bank soal = izin peran + keanggotaan bank (`viewer` baca, `editor` tulis soal, `owner` kelola bank). Admin (`tenant.manage`) owner di semua bank. Bank tanpa akses → 404.
 
@@ -158,7 +158,7 @@ Contoh membuat soal (rich text = HTML, disanitasi server; rumus `<span data-math
   "competency_id": "<uuid>", "stimulus_id": "<uuid>", "explanation": "<p>Samakan penyebut.</p>"
 }
 ```
-Tipe lain: `mcq_multi` (`answer_key.correct: ["a","c"]`, `scoring.method: all_or_nothing|partial`), `true_false` (`answer_key.value`), `short_answer` (`content.input: text|number`, `answer_key.accepted: [{value, match: exact|case_insensitive|numeric, tolerance?}]`), `essay` (`content.max_words?`, `answer_key.model_answer?`, `scoring.rubric: [{criterion, max}]`). Detail: [08-DATABASE-MVP §4](../../DOCS/PLAN/08-DATABASE-MVP.md).
+Tipe lain: `mcq_multi` (`answer_key.correct: ["a","c"]`, `scoring.method: all_or_nothing|partial`), `true_false` (`answer_key.value`), `short_answer` (`content.input: text|number`, `answer_key.accepted: [{value, match: exact|case_insensitive|numeric, tolerance?}]`), `essay` (`content.max_words?`, `answer_key.model_answer?`, `scoring.rubric: [{criterion, max}]`). Bentuk JSON lengkap per tipe ada di `models/itembank/content.go`.
 
 Ujian: semua perubahan struktur menjawab dengan **ujian lengkap terbaru** (editor bisa langsung render ulang). `available` pada aturan = jumlah soal aktif yang cocok sekarang (draft) atau ukuran snapshot (terbit). Kompetensi pada aturan mencakup sub-kompetensinya.
 
