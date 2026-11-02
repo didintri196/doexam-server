@@ -14,6 +14,7 @@ import (
 
 	"doexam/app/server/handler"
 	"doexam/business/auth"
+	"doexam/business/exam"
 	"doexam/business/group"
 	"doexam/business/health"
 	"doexam/business/importer"
@@ -47,6 +48,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	importRepo := importer.NewImportRepo(db)
 	subjectRepo := subject.NewSubjectRepo(db)
 	itemBankRepo := itembank.NewItemBankRepo(db)
+	examRepo := exam.NewExamRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0)
@@ -67,6 +69,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	importSvc := importer.NewImportService(importRepo, txManager, fileStore, importHasher, credentialVault, logger)
 	subjectSvc := subject.NewSubjectService(subjectRepo, txManager, logger)
 	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, logger)
+	examSvc := exam.NewExamService(examRepo, txManager, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
 	healthHandler := handler.NewHealthHandler(healthSvc)
@@ -77,6 +80,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	importHandler := handler.NewImportHandler(importSvc)
 	subjectHandler := handler.NewSubjectHandler(subjectSvc)
 	itemBankHandler := handler.NewItemBankHandler(itemBankSvc)
+	examHandler := handler.NewExamHandler(examSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -171,6 +175,30 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	items.Patch("/:id", itemBankHandler.UpdateItem)
 	items.Delete("/:id", itemBankHandler.DeleteItem)
 	items.Get("/:id/versions", itemBankHandler.ListVersions)
+
+	exams := v1.Group("/exams", requireAuth)
+	exams.Get("/", examHandler.List)
+	exams.Post("/", examHandler.Create)
+	exams.Get("/:id", examHandler.Get)
+	exams.Patch("/:id", examHandler.Update)
+	exams.Delete("/:id", examHandler.Delete)
+	exams.Get("/:id/check", examHandler.Check)
+	exams.Post("/:id/publish", examHandler.Publish)
+	exams.Post("/:id/unpublish", examHandler.Unpublish)
+	exams.Post("/:id/archive", examHandler.Archive)
+	exams.Post("/:id/sections", examHandler.CreateSection)
+	exams.Post("/:id/sections/order", examHandler.OrderSections)
+
+	sections := v1.Group("/sections", requireAuth)
+	sections.Patch("/:id", examHandler.UpdateSection)
+	sections.Delete("/:id", examHandler.DeleteSection)
+	sections.Post("/:id/items", examHandler.AddItems)
+	sections.Post("/:id/items/order", examHandler.OrderSectionItems)
+	sections.Post("/:id/rules", examHandler.CreateRule)
+	v1.Patch("/section-items/:id", requireAuth, examHandler.UpdateSectionItem)
+	v1.Delete("/section-items/:id", requireAuth, examHandler.RemoveSectionItem)
+	v1.Patch("/section-rules/:id", requireAuth, examHandler.UpdateRule)
+	v1.Delete("/section-rules/:id", requireAuth, examHandler.DeleteRule)
 
 	return importSvc.Shutdown, nil
 }
