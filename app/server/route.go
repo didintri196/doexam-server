@@ -17,6 +17,8 @@ import (
 	"doexam/business/group"
 	"doexam/business/health"
 	"doexam/business/importer"
+	"doexam/business/itembank"
+	"doexam/business/subject"
 	"doexam/business/tenant"
 	"doexam/business/user"
 	"doexam/config"
@@ -43,6 +45,8 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	userRepo := user.NewUserRepo(db)
 	groupRepo := group.NewGroupRepo(db)
 	importRepo := importer.NewImportRepo(db)
+	subjectRepo := subject.NewSubjectRepo(db)
+	itemBankRepo := itembank.NewItemBankRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0)
@@ -61,6 +65,8 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	userSvc := user.NewUserService(userRepo, txManager, hasher, logger)
 	groupSvc := group.NewGroupService(groupRepo, txManager, logger)
 	importSvc := importer.NewImportService(importRepo, txManager, fileStore, importHasher, credentialVault, logger)
+	subjectSvc := subject.NewSubjectService(subjectRepo, txManager, logger)
+	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
 	healthHandler := handler.NewHealthHandler(healthSvc)
@@ -69,6 +75,8 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	userHandler := handler.NewUserHandler(userSvc)
 	groupHandler := handler.NewGroupHandler(groupSvc)
 	importHandler := handler.NewImportHandler(importSvc)
+	subjectHandler := handler.NewSubjectHandler(subjectSvc)
+	itemBankHandler := handler.NewItemBankHandler(itemBankSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -127,6 +135,42 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	imports.Get("/:id", importHandler.Get)
 	imports.Post("/:id/commit", importHandler.Commit)
 	imports.Get("/:id/credentials", importHandler.Credentials)
+
+	subjects := v1.Group("/subjects", requireAuth)
+	subjects.Get("/", subjectHandler.List)
+	subjects.Post("/", subjectHandler.Create)
+	subjects.Get("/:id", subjectHandler.Get)
+	subjects.Patch("/:id", subjectHandler.Update)
+	subjects.Delete("/:id", subjectHandler.Delete)
+	subjects.Get("/:id/competencies", subjectHandler.ListCompetencies)
+	subjects.Post("/:id/competencies", subjectHandler.CreateCompetency)
+	v1.Patch("/competencies/:id", requireAuth, subjectHandler.UpdateCompetency)
+	v1.Delete("/competencies/:id", requireAuth, subjectHandler.DeleteCompetency)
+
+	banks := v1.Group("/item-banks", requireAuth)
+	banks.Get("/", itemBankHandler.ListBanks)
+	banks.Post("/", itemBankHandler.CreateBank)
+	banks.Get("/:id", itemBankHandler.GetBank)
+	banks.Patch("/:id", itemBankHandler.UpdateBank)
+	banks.Delete("/:id", itemBankHandler.DeleteBank)
+	banks.Get("/:id/members", itemBankHandler.ListMembers)
+	banks.Post("/:id/members", itemBankHandler.SetMember)
+	banks.Delete("/:id/members/:user_id", itemBankHandler.RemoveMember)
+	banks.Get("/:id/stimuli", itemBankHandler.ListStimuli)
+	banks.Post("/:id/stimuli", itemBankHandler.CreateStimulus)
+	banks.Get("/:id/items", itemBankHandler.ListItems)
+	banks.Post("/:id/items", itemBankHandler.CreateItem)
+
+	stimuli := v1.Group("/stimuli", requireAuth)
+	stimuli.Get("/:id", itemBankHandler.GetStimulus)
+	stimuli.Patch("/:id", itemBankHandler.UpdateStimulus)
+	stimuli.Delete("/:id", itemBankHandler.DeleteStimulus)
+
+	items := v1.Group("/items", requireAuth)
+	items.Get("/:id", itemBankHandler.GetItem)
+	items.Patch("/:id", itemBankHandler.UpdateItem)
+	items.Delete("/:id", itemBankHandler.DeleteItem)
+	items.Get("/:id/versions", itemBankHandler.ListVersions)
 
 	return importSvc.Shutdown, nil
 }
