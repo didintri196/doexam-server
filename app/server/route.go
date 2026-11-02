@@ -19,6 +19,7 @@ import (
 	"doexam/business/health"
 	"doexam/business/importer"
 	"doexam/business/itembank"
+	"doexam/business/session"
 	"doexam/business/subject"
 	"doexam/business/tenant"
 	"doexam/business/user"
@@ -49,6 +50,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	subjectRepo := subject.NewSubjectRepo(db)
 	itemBankRepo := itembank.NewItemBankRepo(db)
 	examRepo := exam.NewExamRepo(db)
+	sessionRepo := session.NewSessionRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0)
@@ -70,6 +72,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	subjectSvc := subject.NewSubjectService(subjectRepo, txManager, logger)
 	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, logger)
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
+	sessionSvc := session.NewSessionService(sessionRepo, txManager, noAttempts{}, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
 	healthHandler := handler.NewHealthHandler(healthSvc)
@@ -81,6 +84,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	subjectHandler := handler.NewSubjectHandler(subjectSvc)
 	itemBankHandler := handler.NewItemBankHandler(itemBankSvc)
 	examHandler := handler.NewExamHandler(examSvc)
+	sessionHandler := handler.NewSessionHandler(sessionSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -200,6 +204,22 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	v1.Patch("/section-rules/:id", requireAuth, examHandler.UpdateRule)
 	v1.Delete("/section-rules/:id", requireAuth, examHandler.DeleteRule)
 
+	sessions := v1.Group("/sessions", requireAuth)
+	sessions.Get("/", sessionHandler.List)
+	sessions.Post("/", sessionHandler.Create)
+	sessions.Get("/:id", sessionHandler.Get)
+	sessions.Patch("/:id", sessionHandler.Update)
+	sessions.Delete("/:id", sessionHandler.Delete)
+	sessions.Post("/:id/status", sessionHandler.SetStatus)
+	sessions.Get("/:id/token", sessionHandler.Token)
+	sessions.Post("/:id/token/rotate", sessionHandler.RotateToken)
+	sessions.Put("/:id/proctors", sessionHandler.SetProctors)
+	sessions.Get("/:id/participants", sessionHandler.ListParticipants)
+	sessions.Post("/:id/participants", sessionHandler.AddParticipants)
+	sessions.Patch("/:id/participants/:user_id", sessionHandler.UpdateParticipant)
+	sessions.Delete("/:id/participants/:user_id", sessionHandler.RemoveParticipant)
+	v1.Get("/my/sessions", requireAuth, sessionHandler.MySessions)
+
 	return importSvc.Shutdown, nil
 }
 
@@ -215,4 +235,11 @@ func loginLimiterKey(c *fiber.Ctx) string {
 
 func tooManyRequests(c *fiber.Ctx) error {
 	return handler.ErrorResponse(c, fiber.StatusTooManyRequests, "too many requests", nil)
+}
+
+// noAttempts stands in for the attempt engine until it exists: closing a session has no attempts to submit.
+type noAttempts struct{}
+
+func (noAttempts) FinalizeSessionAttempts(context.Context, string, string) (int, error) {
+	return 0, nil
 }
