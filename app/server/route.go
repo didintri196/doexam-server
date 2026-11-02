@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,13 +16,20 @@ import (
 	"doexam/business/auth"
 	"doexam/business/group"
 	"doexam/business/health"
+	"doexam/business/importer"
 	"doexam/business/tenant"
 	"doexam/business/user"
 	"doexam/config"
+	modelImport "doexam/models/importer"
 	dbpg "doexam/pkg/db-pg"
 	"doexam/pkg/middleware"
 	"doexam/pkg/password"
+	"doexam/pkg/storage"
+	"doexam/pkg/ttlcache"
 )
+
+// credentialTTL is how long generated import passwords stay downloadable (memory only).
+const credentialTTL = time.Hour
 
 // PrepareRoute wires all dependencies and registers routes. The returned function
 // waits for background work (running imports) during graceful shutdown.
@@ -34,9 +42,17 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	authRepo := auth.NewAuthRepo(db)
 	userRepo := user.NewUserRepo(db)
 	groupRepo := group.NewGroupRepo(db)
+	importRepo := importer.NewImportRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0)
+	// Imports hash with half the CPUs and their own limit, so logins keep flowing.
+	importHasher := password.NewHasher(password.DefaultParams, max(1, runtime.NumCPU()/2))
+	fileStore, err := storage.NewLocalStore(cfg.StorageDir)
+	if err != nil {
+		return nil, err
+	}
+	credentialVault := ttlcache.New[[]modelImport.Credential](credentialTTL)
 
 	// ── Services (Core) ────────────────────────────────────────
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
@@ -44,6 +60,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	authSvc := auth.NewAuthService(authRepo, txManager, hasher, cfg.SessionTTL, logger)
 	userSvc := user.NewUserService(userRepo, txManager, hasher, logger)
 	groupSvc := group.NewGroupService(groupRepo, txManager, logger)
+	importSvc := importer.NewImportService(importRepo, txManager, fileStore, importHasher, credentialVault, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
 	healthHandler := handler.NewHealthHandler(healthSvc)
@@ -51,6 +68,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	authHandler := handler.NewAuthHandler(authSvc)
 	userHandler := handler.NewUserHandler(userSvc)
 	groupHandler := handler.NewGroupHandler(groupSvc)
+	importHandler := handler.NewImportHandler(importSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -102,7 +120,15 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	groups.Post("/:id/members", groupHandler.AddMembers)
 	groups.Delete("/:id/members/:user_id", groupHandler.RemoveMember)
 
-	return func(context.Context) error { return nil }, nil
+	imports := v1.Group("/imports", requireAuth)
+	imports.Get("/templates/:kind", importHandler.Template)
+	imports.Get("/", importHandler.List)
+	imports.Post("/", importHandler.Upload)
+	imports.Get("/:id", importHandler.Get)
+	imports.Post("/:id/commit", importHandler.Commit)
+	imports.Get("/:id/credentials", importHandler.Credentials)
+
+	return importSvc.Shutdown, nil
 }
 
 // loginLimiterKey is the rate-limit key for login: client IP + tenant + username.
