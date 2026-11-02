@@ -13,7 +13,8 @@ const (
 	PasswordMaxBytes = 256
 )
 
-// LoginInput is the body of POST /api/v1/auth/login.
+// LoginInput is the body of POST /api/v1/auth/login. Tenant (the slug) is optional
+// while the installation serves a single institution.
 type LoginInput struct {
 	Tenant   string `json:"tenant"`
 	Username string `json:"username"`

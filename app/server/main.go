@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // tenant time zones are validated even on hosts without zoneinfo
 
 	"github.com/gofiber/fiber/v2"
 

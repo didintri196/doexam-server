@@ -38,6 +38,16 @@ func (f *fakeStore) FindTenantBySlug(_ context.Context, slug string) (modelTenan
 	return modelTenant.TenantEntity{}, errr.ErrNotFound
 }
 
+func (f *fakeStore) ListActiveTenants(_ context.Context, limit int) ([]modelTenant.TenantEntity, error) {
+	var out []modelTenant.TenantEntity
+	for _, t := range f.tenants {
+		if t.IsActive && len(out) < limit {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) FindTenantByID(_ context.Context, id string) (modelTenant.TenantEntity, error) {
 	if t, ok := f.tenants[id]; ok {
 		return t, nil
@@ -196,6 +206,15 @@ func TestLogin(t *testing.T) {
 		{name: "missing fields", in: modelAuth.LoginInput{}, wantErr: errr.ErrInvalidInput},
 		{name: "unknown tenant", in: modelAuth.LoginInput{Tenant: "nope", Username: "admin", Password: "rahasia123"}, wantErr: errr.ErrUnauthorized, wantDummy: true},
 		{name: "inactive tenant", in: modelAuth.LoginInput{Tenant: "sman1", Username: "admin", Password: "rahasia123"},
+			mutate:  func(s *fakeStore) { t := s.tenants[tenantID]; t.IsActive = false; s.tenants[tenantID] = t },
+			wantErr: errr.ErrUnauthorized, wantDummy: true},
+		{name: "tenant omitted, single institution", in: modelAuth.LoginInput{Username: "admin", Password: "rahasia123"}, wantAudit: modelAudit.ActionLogin},
+		{name: "tenant omitted, several institutions", in: modelAuth.LoginInput{Username: "admin", Password: "rahasia123"},
+			mutate: func(s *fakeStore) {
+				s.tenants["0192a000-0000-7000-8000-000000000009"] = modelTenant.TenantEntity{ID: "0192a000-0000-7000-8000-000000000009", Slug: "sman2", IsActive: true}
+			},
+			wantErr: errr.ErrInvalidInput},
+		{name: "tenant omitted, none active", in: modelAuth.LoginInput{Username: "admin", Password: "rahasia123"},
 			mutate:  func(s *fakeStore) { t := s.tenants[tenantID]; t.IsActive = false; s.tenants[tenantID] = t },
 			wantErr: errr.ErrUnauthorized, wantDummy: true},
 		{name: "unknown user", in: modelAuth.LoginInput{Tenant: "sman1", Username: "ghost", Password: "rahasia123"}, wantErr: errr.ErrUnauthorized, wantDummy: true},

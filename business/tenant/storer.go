@@ -5,10 +5,12 @@ import (
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
+	modelMedia "doexam/models/media"
 	modelTenant "doexam/models/tenant"
 )
 
-// TenantStorer is the persistence port for tenant setup.
+// TenantStorer is the persistence port for tenants. The tenants table has no
+// row-level security, so the Find* tenant lookups also work outside a tenant transaction.
 type TenantStorer interface {
 	// LockSetup serializes concurrent setup calls until the transaction ends.
 	LockSetup(ctx context.Context) error
@@ -19,6 +21,22 @@ type TenantStorer interface {
 	AssignRoles(ctx context.Context, links []modelAuth.UserRoleEntity) error
 	CreateAuditLog(ctx context.Context, log *modelAudit.AuditLogEntity) error
 	FindByID(ctx context.Context, id string) (modelTenant.TenantEntity, error)
+	FindBySlug(ctx context.Context, slug string) (modelTenant.TenantEntity, error)
+	// ListActive returns up to limit active tenants, oldest first.
+	ListActive(ctx context.Context, limit int) ([]modelTenant.TenantEntity, error)
+	// FindForUpdate locks the tenant row until the transaction ends.
+	FindForUpdate(ctx context.Context, id string) (modelTenant.TenantEntity, error)
+	UpdateTenant(ctx context.Context, id, name string, settings []byte) error
+
+	// Media files are under row-level security: call these inside TxManager.WithTenant.
+	CreateMediaFile(ctx context.Context, f *modelMedia.MediaFileEntity) error
+	FindMediaFile(ctx context.Context, id string) (modelMedia.MediaFileEntity, error)
+}
+
+// FileStore keeps uploaded files.
+type FileStore interface {
+	Put(ctx context.Context, key string, data []byte) error
+	Get(ctx context.Context, key string) ([]byte, error)
 }
 
 // TxManager runs fn inside a transaction scoped to tenantID.

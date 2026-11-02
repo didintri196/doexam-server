@@ -68,7 +68,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 
 	// ── Services (Core) ────────────────────────────────────────
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
-	tenantSvc := tenant.NewTenantService(tenantRepo, txManager, hasher, logger)
+	tenantSvc := tenant.NewTenantService(tenantRepo, txManager, hasher, fileStore, logger)
 	authSvc := auth.NewAuthService(authRepo, txManager, hasher, cfg.SessionTTL, logger)
 	userSvc := user.NewUserService(userRepo, txManager, hasher, logger)
 	groupSvc := group.NewGroupService(groupRepo, txManager, logger)
@@ -124,7 +124,13 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	authGroup.Post("/logout", requireAuth, authHandler.Logout)
 	authGroup.Post("/change-password", requireAuth, authHandler.ChangePassword)
 
+	v1.Get("/public/tenant", tenantHandler.Public)
+	v1.Get("/public/tenant/logo", tenantHandler.Logo)
+
 	v1.Get("/tenant", requireAuth, tenantHandler.Current)
+	v1.Patch("/tenant", requireAuth, tenantHandler.Update)
+	v1.Put("/tenant/logo", requireAuth, tenantHandler.SetLogo)
+	v1.Delete("/tenant/logo", requireAuth, tenantHandler.RemoveLogo)
 	v1.Get("/roles", requireAuth, userHandler.ListRoles)
 
 	users := v1.Group("/users", requireAuth)

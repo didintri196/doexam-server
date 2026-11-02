@@ -11,12 +11,13 @@ const (
 	PresetCustom  Preset = "custom"
 )
 
-// TenantEntity mirrors the tenants table (settings is left to its DB default).
+// TenantEntity mirrors the tenants table. Settings holds the JSON of Settings.
 type TenantEntity struct {
 	ID        string `gorm:"type:uuid;primaryKey"`
 	Slug      string `gorm:"not null"`
 	Name      string `gorm:"not null"`
 	Preset    Preset `gorm:"not null"`
+	Settings  []byte `gorm:"type:jsonb;not null"`
 	IsActive  bool
 	CreatedAt time.Time
 	UpdatedAt time.Time

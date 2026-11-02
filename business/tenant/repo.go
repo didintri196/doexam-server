@@ -6,9 +6,11 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
+	modelMedia "doexam/models/media"
 	modelTenant "doexam/models/tenant"
 	dbpg "doexam/pkg/db-pg"
 	"doexam/pkg/errr"
@@ -89,6 +91,64 @@ func (r *TenantRepo) FindByID(ctx context.Context, id string) (modelTenant.Tenan
 		return modelTenant.TenantEntity{}, fmt.Errorf("find tenant %s: %w", id, err)
 	}
 	return t, nil
+}
+
+func (r *TenantRepo) FindBySlug(ctx context.Context, slug string) (modelTenant.TenantEntity, error) {
+	var t modelTenant.TenantEntity
+	if err := dbpg.Conn(ctx, r.db).Where("slug = ?", slug).First(&t).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return modelTenant.TenantEntity{}, errr.ErrNotFound
+		}
+		return modelTenant.TenantEntity{}, fmt.Errorf("find tenant by slug: %w", err)
+	}
+	return t, nil
+}
+
+func (r *TenantRepo) ListActive(ctx context.Context, limit int) ([]modelTenant.TenantEntity, error) {
+	var ts []modelTenant.TenantEntity
+	if err := dbpg.Conn(ctx, r.db).Where("is_active").Order("created_at, id").Limit(limit).Find(&ts).Error; err != nil {
+		return nil, fmt.Errorf("list active tenants: %w", err)
+	}
+	return ts, nil
+}
+
+func (r *TenantRepo) FindForUpdate(ctx context.Context, id string) (modelTenant.TenantEntity, error) {
+	var t modelTenant.TenantEntity
+	err := dbpg.Conn(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&t).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return modelTenant.TenantEntity{}, errr.ErrNotFound
+		}
+		return modelTenant.TenantEntity{}, fmt.Errorf("lock tenant %s: %w", id, err)
+	}
+	return t, nil
+}
+
+func (r *TenantRepo) UpdateTenant(ctx context.Context, id, name string, settings []byte) error {
+	err := dbpg.Conn(ctx, r.db).Model(&modelTenant.TenantEntity{}).Where("id = ?", id).
+		Updates(map[string]any{"name": name, "settings": settings}).Error
+	if err != nil {
+		return fmt.Errorf("update tenant %s: %w", id, err)
+	}
+	return nil
+}
+
+func (r *TenantRepo) CreateMediaFile(ctx context.Context, f *modelMedia.MediaFileEntity) error {
+	if err := dbpg.Conn(ctx, r.db).Create(f).Error; err != nil {
+		return translate(err, "create media file")
+	}
+	return nil
+}
+
+func (r *TenantRepo) FindMediaFile(ctx context.Context, id string) (modelMedia.MediaFileEntity, error) {
+	var f modelMedia.MediaFileEntity
+	if err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&f).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return modelMedia.MediaFileEntity{}, errr.ErrNotFound
+		}
+		return modelMedia.MediaFileEntity{}, fmt.Errorf("find media file %s: %w", id, err)
+	}
+	return f, nil
 }
 
 // translate maps a unique violation to errr.ErrAlreadyExists.

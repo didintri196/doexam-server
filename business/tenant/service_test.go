@@ -9,6 +9,7 @@ import (
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
+	modelMedia "doexam/models/media"
 	modelTenant "doexam/models/tenant"
 	"doexam/pkg/errr"
 )
@@ -21,6 +22,8 @@ type fakeStore struct {
 	users     []modelAuth.UserEntity
 	userRoles []modelAuth.UserRoleEntity
 	audits    []modelAudit.AuditLogEntity
+	media     []modelMedia.MediaFileEntity
+	updates   int
 }
 
 func (f *fakeStore) LockSetup(context.Context) error { f.locked = true; return nil }
@@ -56,6 +59,60 @@ func (f *fakeStore) FindByID(_ context.Context, id string) (modelTenant.TenantEn
 	return modelTenant.TenantEntity{}, errr.ErrNotFound
 }
 
+func (f *fakeStore) FindBySlug(_ context.Context, slug string) (modelTenant.TenantEntity, error) {
+	for _, t := range f.tenants {
+		if t.Slug == slug {
+			return t, nil
+		}
+	}
+	return modelTenant.TenantEntity{}, errr.ErrNotFound
+}
+func (f *fakeStore) ListActive(_ context.Context, limit int) ([]modelTenant.TenantEntity, error) {
+	var out []modelTenant.TenantEntity
+	for _, t := range f.tenants {
+		if t.IsActive && len(out) < limit {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+func (f *fakeStore) FindForUpdate(ctx context.Context, id string) (modelTenant.TenantEntity, error) {
+	return f.FindByID(ctx, id)
+}
+func (f *fakeStore) UpdateTenant(_ context.Context, id, name string, settings []byte) error {
+	for i := range f.tenants {
+		if f.tenants[i].ID == id {
+			f.tenants[i].Name, f.tenants[i].Settings = name, settings
+			f.updates++
+			return nil
+		}
+	}
+	return errr.ErrNotFound
+}
+func (f *fakeStore) CreateMediaFile(_ context.Context, m *modelMedia.MediaFileEntity) error {
+	f.media = append(f.media, *m)
+	return nil
+}
+func (f *fakeStore) FindMediaFile(_ context.Context, id string) (modelMedia.MediaFileEntity, error) {
+	for _, m := range f.media {
+		if m.ID == id {
+			return m, nil
+		}
+	}
+	return modelMedia.MediaFileEntity{}, errr.ErrNotFound
+}
+
+// fakeFiles is an in-memory FileStore.
+type fakeFiles map[string][]byte
+
+func (f fakeFiles) Put(_ context.Context, key string, data []byte) error { f[key] = data; return nil }
+func (f fakeFiles) Get(_ context.Context, key string) ([]byte, error) {
+	if d, ok := f[key]; ok {
+		return d, nil
+	}
+	return nil, errors.New("missing")
+}
+
 type fakeTx struct{ tenantID string }
 
 func (f *fakeTx) WithTenant(ctx context.Context, id string, fn func(context.Context) error) error {
@@ -75,7 +132,7 @@ func validInput() modelTenant.SetupInput {
 }
 
 func newService(store *fakeStore, tx *fakeTx) *TenantService {
-	return NewTenantService(store, tx, fakeHasher{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewTenantService(store, tx, fakeHasher{}, fakeFiles{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func TestSetup(t *testing.T) {
@@ -127,6 +184,7 @@ func TestSetupRejected(t *testing.T) {
 		wantField string
 	}{
 		{name: "already set up", existing: 1, wantErr: errr.ErrAlreadyExists},
+		{name: "bad name", mutate: func(in *modelTenant.SetupInput) { in.TenantName = " " }, wantErr: errr.ErrInvalidInput, wantField: "tenant_name"},
 		{name: "bad slug", mutate: func(in *modelTenant.SetupInput) { in.TenantSlug = "no spaces!" }, wantErr: errr.ErrInvalidInput, wantField: "tenant_slug"},
 		{name: "bad preset", mutate: func(in *modelTenant.SetupInput) { in.Preset = "kampus" }, wantErr: errr.ErrInvalidInput, wantField: "preset"},
 		{name: "weak password", mutate: func(in *modelTenant.SetupInput) { in.AdminPassword = "123" }, wantErr: errr.ErrInvalidInput, wantField: "admin_password"},
@@ -153,6 +211,22 @@ func TestSetupRejected(t *testing.T) {
 				t.Fatal("nothing may be created")
 			}
 		})
+	}
+}
+
+func TestSetupDerivesSlugFromName(t *testing.T) {
+	in := validInput()
+	in.TenantSlug, in.TenantName = "", "SMA Negeri 1 Malang"
+	store := &fakeStore{}
+	dto, err := newService(store, &fakeTx{}).Setup(context.Background(), in)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if dto.Tenant.Slug != "sma-negeri-1-malang" {
+		t.Fatalf("slug = %q", dto.Tenant.Slug)
+	}
+	if string(store.tenants[0].Settings) != "{}" {
+		t.Fatalf("settings must start as {}, got %s", store.tenants[0].Settings)
 	}
 }
 

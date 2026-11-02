@@ -17,21 +17,23 @@ import (
 	"doexam/pkg/errr"
 )
 
-// TenantService handles tenants: first-run setup and reading the current tenant.
+// TenantService handles tenants: first-run setup, the institution profile and its logo.
 type TenantService struct {
 	storer TenantStorer
 	tx     TxManager
 	hasher PasswordHasher
+	files  FileStore
 	tracer trace.Tracer
 	logger *slog.Logger
 }
 
 // NewTenantService returns a concrete TenantService.
-func NewTenantService(storer TenantStorer, tx TxManager, hasher PasswordHasher, logger *slog.Logger) *TenantService {
+func NewTenantService(storer TenantStorer, tx TxManager, hasher PasswordHasher, files FileStore, logger *slog.Logger) *TenantService {
 	return &TenantService{
 		storer: storer,
 		tx:     tx,
 		hasher: hasher,
+		files:  files,
 		tracer: otel.Tracer("doexam.service.tenant"),
 		logger: logger,
 	}
@@ -67,7 +69,8 @@ func (s *TenantService) setup(ctx context.Context, in modelTenant.SetupInput) (m
 	}
 
 	tenant := modelTenant.TenantEntity{
-		ID: newID(), Slug: in.TenantSlug, Name: in.TenantName, Preset: in.Preset, IsActive: true,
+		ID: newID(), Slug: in.TenantSlug, Name: in.TenantName, Preset: in.Preset,
+		Settings: modelTenant.Settings{}.Encode(), IsActive: true,
 	}
 	admin := modelAuth.UserEntity{
 		ID: newID(), TenantID: tenant.ID, Username: in.AdminUsername, Email: in.AdminEmail,
@@ -149,7 +152,7 @@ func validateSetup(in modelTenant.SetupInput) error {
 	v := errr.Validation{}
 	v.Check(modelTenant.SlugPattern.MatchString(in.TenantSlug), "tenant_slug",
 		"must be 3-63 chars of lowercase letters, digits or dashes")
-	v.Check(in.TenantName != "" && len(in.TenantName) <= 200, "tenant_name", "required, max 200 chars")
+	v.Check(validName(in.TenantName), "tenant_name", "required, max 200 chars")
 	v.Check(in.Preset == modelTenant.PresetSchool || in.Preset == modelTenant.PresetCompany ||
 		in.Preset == modelTenant.PresetCustom, "preset", "must be school, company or custom")
 	v.Check(modelAuth.ValidUsername(in.AdminUsername), "admin_username", modelAuth.UsernameRule)
@@ -157,6 +160,12 @@ func validateSetup(in modelTenant.SetupInput) error {
 	v.Check(modelAuth.ValidPassword(in.AdminPassword), "admin_password",
 		fmt.Sprintf("must be %d-%d characters", modelAuth.PasswordMinLen, modelAuth.PasswordMaxBytes))
 	return v.Err()
+}
+
+func fail(span trace.Span, err error) error {
+	span.SetStatus(codes.Error, err.Error())
+	span.RecordError(err)
+	return err
 }
 
 // newID returns a UUIDv7 (time-ordered, index friendly).

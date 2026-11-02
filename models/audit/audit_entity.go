@@ -9,6 +9,8 @@ import (
 // Audit actions. Format: "<entity>.<verb>".
 const (
 	ActionTenantSetup    = "tenant.setup"
+	ActionTenantUpdate   = "tenant.update"
+	ActionTenantLogo     = "tenant.logo"
 	ActionLogin          = "auth.login"
 	ActionLoginFailed    = "auth.login_failed"
 	ActionLogout         = "auth.logout"

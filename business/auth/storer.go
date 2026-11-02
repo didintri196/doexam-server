@@ -14,6 +14,8 @@ import (
 type AuthStorer interface {
 	FindTenantBySlug(ctx context.Context, slug string) (modelTenant.TenantEntity, error)
 	FindTenantByID(ctx context.Context, id string) (modelTenant.TenantEntity, error)
+	// ListActiveTenants returns up to limit active tenants.
+	ListActiveTenants(ctx context.Context, limit int) ([]modelTenant.TenantEntity, error)
 
 	FindUserByUsername(ctx context.Context, username string) (modelAuth.UserEntity, error)
 	FindUserByID(ctx context.Context, id string) (modelAuth.UserEntity, error)

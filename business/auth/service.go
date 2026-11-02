@@ -58,7 +58,30 @@ func NewAuthService(storer AuthStorer, tx TxManager, hasher PasswordHasher, sess
 	}
 }
 
-// Login checks credentials and opens a new session.
+// errTenantRequired: the installation serves several institutions, so the login must name one.
+var errTenantRequired = &errr.ValidationError{Fields: map[string]string{"tenant": "required"}}
+
+// loginTenant finds the tenant named by slug or, when slug is empty, the only active tenant.
+func (s *AuthService) loginTenant(ctx context.Context, slug string) (modelTenant.TenantEntity, error) {
+	if slug != "" {
+		return s.storer.FindTenantBySlug(ctx, slug)
+	}
+	ts, err := s.storer.ListActiveTenants(ctx, 2)
+	if err != nil {
+		return modelTenant.TenantEntity{}, err
+	}
+	switch len(ts) {
+	case 1:
+		return ts[0], nil
+	case 0:
+		return modelTenant.TenantEntity{}, errr.ErrNotFound
+	default:
+		return modelTenant.TenantEntity{}, errTenantRequired
+	}
+}
+
+// Login checks credentials and opens a new session. The tenant may be omitted while
+// the installation serves a single institution.
 // Every failure returns the same "invalid credentials" error, so callers cannot
 // learn whether the tenant or username exists.
 func (s *AuthService) Login(ctx context.Context, in modelAuth.LoginInput, client modelAudit.Client) (modelAuth.LoginDTO, error) {
@@ -78,14 +101,13 @@ func (s *AuthService) Login(ctx context.Context, in modelAuth.LoginInput, client
 func (s *AuthService) login(ctx context.Context, in modelAuth.LoginInput, client modelAudit.Client) (modelAuth.LoginDTO, error) {
 	in.Normalize()
 	v := errr.Validation{}
-	v.Check(in.Tenant != "", "tenant", "required")
 	v.Check(in.Username != "", "username", "required")
 	v.Check(in.Password != "" && len(in.Password) <= modelAuth.PasswordMaxBytes, "password", "required")
 	if err := v.Err(); err != nil {
 		return modelAuth.LoginDTO{}, err
 	}
 
-	tenant, err := s.storer.FindTenantBySlug(ctx, in.Tenant)
+	tenant, err := s.loginTenant(ctx, in.Tenant)
 	if errors.Is(err, errr.ErrNotFound) || (err == nil && !tenant.IsActive) {
 		s.hasher.VerifyDummy(ctx, in.Password)
 		return modelAuth.LoginDTO{}, errInvalidCredentials

@@ -36,6 +36,14 @@ func (r *AuthRepo) FindTenantBySlug(ctx context.Context, slug string) (modelTena
 	return t, nil
 }
 
+func (r *AuthRepo) ListActiveTenants(ctx context.Context, limit int) ([]modelTenant.TenantEntity, error) {
+	var ts []modelTenant.TenantEntity
+	if err := dbpg.Conn(ctx, r.db).Where("is_active").Order("created_at, id").Limit(limit).Find(&ts).Error; err != nil {
+		return nil, fmt.Errorf("list active tenants: %w", err)
+	}
+	return ts, nil
+}
+
 func (r *AuthRepo) FindTenantByID(ctx context.Context, id string) (modelTenant.TenantEntity, error) {
 	var t modelTenant.TenantEntity
 	if err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&t).Error; err != nil {

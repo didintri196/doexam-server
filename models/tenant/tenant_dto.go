@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -9,6 +10,7 @@ import (
 var SlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 
 // SetupInput is the body of POST /api/v1/setup (first tenant + its admin).
+// TenantSlug is optional: it is derived from TenantName when empty.
 type SetupInput struct {
 	TenantSlug    string  `json:"tenant_slug"`
 	TenantName    string  `json:"tenant_name"`
@@ -36,15 +38,93 @@ func (in *SetupInput) Normalize() {
 	if in.Preset == "" {
 		in.Preset = PresetSchool
 	}
+	if in.TenantSlug == "" {
+		in.TenantSlug = SlugFromName(in.TenantName)
+	}
 }
 
-// TenantDTO is the public shape of a tenant.
+// fallbackSlug is used when a name has too few latin letters or digits for a slug.
+const fallbackSlug = "main"
+
+// SlugFromName derives a slug from an institution name: "SMA Negeri 1 Malang" → "sma-negeri-1-malang".
+func SlugFromName(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+		if b.Len() >= 63 {
+			break
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if !SlugPattern.MatchString(slug) {
+		return fallbackSlug
+	}
+	return slug
+}
+
+// UpdateInput is the body of PATCH /api/v1/tenant. Nil fields are left unchanged;
+// an empty string resets a setting to its default (the name cannot be emptied).
+type UpdateInput struct {
+	Name         *string `json:"name"`
+	Timezone     *string `json:"timezone"`
+	Locale       *string `json:"locale"`
+	PrimaryColor *string `json:"primary_color"`
+	Letterhead   *string `json:"letterhead"`
+}
+
+// Normalize trims every field.
+func (in *UpdateInput) Normalize() {
+	for _, f := range []*string{in.Name, in.Timezone, in.Locale, in.PrimaryColor, in.Letterhead} {
+		if f != nil {
+			*f = strings.TrimSpace(*f)
+		}
+	}
+	if in.PrimaryColor != nil {
+		*in.PrimaryColor = strings.ToLower(*in.PrimaryColor)
+	}
+}
+
+// TenantDTO is the tenant as shown to its members.
 type TenantDTO struct {
-	ID       string `json:"id"`
-	Slug     string `json:"slug"`
-	Name     string `json:"name"`
-	Preset   Preset `json:"preset"`
-	IsActive bool   `json:"is_active"`
+	ID       string      `json:"id"`
+	Slug     string      `json:"slug"`
+	Name     string      `json:"name"`
+	Preset   Preset      `json:"preset"`
+	IsActive bool        `json:"is_active"`
+	Settings SettingsDTO `json:"settings"`
+}
+
+// SettingsDTO shows the effective settings (defaults applied).
+type SettingsDTO struct {
+	Timezone     string  `json:"timezone"`
+	Locale       string  `json:"locale"`
+	PrimaryColor *string `json:"primary_color"`
+	Letterhead   string  `json:"letterhead"`
+	LogoURL      *string `json:"logo_url"`
+}
+
+// PublicTenantDTO is what the login page may show before anyone signs in.
+type PublicTenantDTO struct {
+	Slug         string  `json:"slug"`
+	Name         string  `json:"name"`
+	Preset       Preset  `json:"preset"`
+	Locale       string  `json:"locale"`
+	PrimaryColor *string `json:"primary_color"`
+	LogoURL      *string `json:"logo_url"`
+}
+
+// LogoFile is a logo ready to be served.
+type LogoFile struct {
+	Data     []byte
+	MimeType string
+	SHA256   []byte
 }
 
 // SetupDTO is returned after setup.
@@ -58,5 +138,45 @@ type SetupDTO struct {
 
 // ToDTO converts a TenantEntity to TenantDTO.
 func ToDTO(e TenantEntity) TenantDTO {
-	return TenantDTO{ID: e.ID, Slug: e.Slug, Name: e.Name, Preset: e.Preset, IsActive: e.IsActive}
+	s := DecodeSettings(e.Settings)
+	return TenantDTO{
+		ID: e.ID, Slug: e.Slug, Name: e.Name, Preset: e.Preset, IsActive: e.IsActive,
+		Settings: SettingsDTO{
+			Timezone: orDefault(s.Timezone, DefaultTimezone), Locale: orDefault(s.Locale, DefaultLocale),
+			PrimaryColor: nonEmpty(s.PrimaryColor), Letterhead: s.Letterhead, LogoURL: LogoURL(e.Slug, s.LogoFileID),
+		},
+	}
+}
+
+// ToPublicDTO converts a TenantEntity to PublicTenantDTO.
+func ToPublicDTO(e TenantEntity) PublicTenantDTO {
+	s := DecodeSettings(e.Settings)
+	return PublicTenantDTO{
+		Slug: e.Slug, Name: e.Name, Preset: e.Preset, Locale: orDefault(s.Locale, DefaultLocale),
+		PrimaryColor: nonEmpty(s.PrimaryColor), LogoURL: LogoURL(e.Slug, s.LogoFileID),
+	}
+}
+
+// LogoURL is the public URL of a tenant's logo; the file id in the query busts caches
+// when the logo changes. It returns nil when no logo is set.
+func LogoURL(slug, fileID string) *string {
+	if fileID == "" {
+		return nil
+	}
+	u := "/api/v1/public/tenant/logo?" + url.Values{"tenant": {slug}, "v": {fileID}}.Encode()
+	return &u
+}
+
+func orDefault(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
+}
+
+func nonEmpty(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
