@@ -20,6 +20,7 @@ import (
 	"doexam/business/health"
 	"doexam/business/importer"
 	"doexam/business/itembank"
+	"doexam/business/report"
 	"doexam/business/session"
 	"doexam/business/subject"
 	"doexam/business/tenant"
@@ -53,6 +54,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	examRepo := exam.NewExamRepo(db)
 	sessionRepo := session.NewSessionRepo(db)
 	attemptRepo := attempt.NewAttemptRepo(db)
+	reportRepo := report.NewReportRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0)
@@ -76,6 +78,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
 	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, logger)
 	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, logger)
+	reportSvc := report.NewReportService(reportRepo, txManager, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
 	healthHandler := handler.NewHealthHandler(healthSvc)
@@ -90,6 +93,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	sessionHandler := handler.NewSessionHandler(sessionSvc)
 	attemptHandler := handler.NewAttemptHandler(attemptSvc)
 	gradingHandler := handler.NewGradingHandler(attemptSvc)
+	reportHandler := handler.NewReportHandler(reportSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -247,6 +251,12 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	v1.Get("/grading/items/:id", requireAuth, gradingHandler.Item)
 	v1.Post("/grading/items/:id", requireAuth, gradingHandler.Grade)
 	v1.Delete("/adjustments/:id", requireAuth, gradingHandler.RevokeAdjustment)
+
+	exams.Get("/:id/recap", reportHandler.Recap)
+	exams.Get("/:id/recap/export", reportHandler.RecapExport)
+	exams.Get("/:id/analysis", reportHandler.Analysis)
+	exams.Post("/:id/analysis", reportHandler.Recompute)
+	attempts.Get("/:id/report", reportHandler.AttemptReport)
 
 	return importSvc.Shutdown, nil
 }
