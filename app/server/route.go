@@ -13,8 +13,10 @@ import (
 
 	"doexam/app/server/handler"
 	"doexam/business/auth"
+	"doexam/business/group"
 	"doexam/business/health"
 	"doexam/business/tenant"
+	"doexam/business/user"
 	"doexam/config"
 	dbpg "doexam/pkg/db-pg"
 	"doexam/pkg/middleware"
@@ -30,6 +32,8 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	txManager := dbpg.NewTxManager(db)
 	tenantRepo := tenant.NewTenantRepo(db)
 	authRepo := auth.NewAuthRepo(db)
+	userRepo := user.NewUserRepo(db)
+	groupRepo := group.NewGroupRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0)
@@ -38,11 +42,15 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
 	tenantSvc := tenant.NewTenantService(tenantRepo, txManager, hasher, logger)
 	authSvc := auth.NewAuthService(authRepo, txManager, hasher, cfg.SessionTTL, logger)
+	userSvc := user.NewUserService(userRepo, txManager, hasher, logger)
+	groupSvc := group.NewGroupService(groupRepo, txManager, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
 	healthHandler := handler.NewHealthHandler(healthSvc)
 	tenantHandler := handler.NewTenantHandler(tenantSvc)
 	authHandler := handler.NewAuthHandler(authSvc)
+	userHandler := handler.NewUserHandler(userSvc)
+	groupHandler := handler.NewGroupHandler(groupSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -74,6 +82,25 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	authGroup.Post("/change-password", requireAuth, authHandler.ChangePassword)
 
 	v1.Get("/tenant", requireAuth, tenantHandler.Current)
+	v1.Get("/roles", requireAuth, userHandler.ListRoles)
+
+	users := v1.Group("/users", requireAuth)
+	users.Get("/", userHandler.List)
+	users.Post("/", userHandler.Create)
+	users.Get("/:id", userHandler.Get)
+	users.Patch("/:id", userHandler.Update)
+	users.Delete("/:id", userHandler.Delete)
+	users.Post("/:id/reset-password", userHandler.ResetPassword)
+
+	groups := v1.Group("/groups", requireAuth)
+	groups.Get("/", groupHandler.List)
+	groups.Post("/", groupHandler.Create)
+	groups.Get("/:id", groupHandler.Get)
+	groups.Patch("/:id", groupHandler.Update)
+	groups.Delete("/:id", groupHandler.Delete)
+	groups.Get("/:id/members", groupHandler.ListMembers)
+	groups.Post("/:id/members", groupHandler.AddMembers)
+	groups.Delete("/:id/members/:user_id", groupHandler.RemoveMember)
 
 	return func(context.Context) error { return nil }, nil
 }
