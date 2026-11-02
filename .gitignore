@@ -1,0 +1,26 @@
+# Binaries
+bin/
+*.exe
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Air (hot reload)
+tmp/
+
+# Uploaded files (STORAGE_DIR)
+data/
