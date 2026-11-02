@@ -89,6 +89,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	examHandler := handler.NewExamHandler(examSvc)
 	sessionHandler := handler.NewSessionHandler(sessionSvc)
 	attemptHandler := handler.NewAttemptHandler(attemptSvc)
+	gradingHandler := handler.NewGradingHandler(attemptSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -238,6 +239,14 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	attempts.Post("/:id/reset-device", attemptHandler.ResetDevice)
 	attempts.Post("/:id/force-submit", attemptHandler.ForceSubmit)
 	v1.Get("/my/attempts", requireAuth, attemptHandler.MyAttempts)
+
+	exams.Get("/:id/grading/summary", gradingHandler.Summary)
+	exams.Get("/:id/grading", gradingHandler.Queue)
+	exams.Get("/:id/adjustments", gradingHandler.ListAdjustments)
+	exams.Post("/:id/adjustments", gradingHandler.CreateAdjustment)
+	v1.Get("/grading/items/:id", requireAuth, gradingHandler.Item)
+	v1.Post("/grading/items/:id", requireAuth, gradingHandler.Grade)
+	v1.Delete("/adjustments/:id", requireAuth, gradingHandler.RevokeAdjustment)
 
 	return importSvc.Shutdown, nil
 }
