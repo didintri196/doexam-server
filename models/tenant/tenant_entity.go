@@ -2,7 +2,8 @@ package tenant
 
 import "time"
 
-// Preset mirrors the CHECK constraint on tenants.preset.
+// Preset mirrors the CHECK constraint on tenants.preset. It is kept for compatibility and
+// future presets; it no longer changes role names or any wording (see SystemRoles).
 type Preset string
 
 const (

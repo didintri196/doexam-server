@@ -36,7 +36,7 @@ func (in *SetupInput) Normalize() {
 		}
 	}
 	if in.Preset == "" {
-		in.Preset = PresetSchool
+		in.Preset = PresetCustom
 	}
 	if in.TenantSlug == "" {
 		in.TenantSlug = SlugFromName(in.TenantName)

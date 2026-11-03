@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// SubjectEntity mirrors the subjects table (mapel / test domain).
+// SubjectEntity mirrors the subjects table (test domain).
 type SubjectEntity struct {
 	ID        string `gorm:"type:uuid;primaryKey"`
 	TenantID  string `gorm:"type:uuid;not null"`

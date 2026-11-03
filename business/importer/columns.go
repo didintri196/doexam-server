@@ -27,13 +27,13 @@ const (
 )
 
 var userColumns = []spreadsheet.Column{
-	{Name: colUsername, Required: true, Note: "Untuk login. 3-100 karakter: huruf, angka, . _ @ -. Contoh: NIS/NISN atau ID karyawan."},
+	{Name: colUsername, Required: true, Note: "Untuk login. 3-100 karakter: huruf, angka, . _ @ -. Contoh: nomor peserta atau ID karyawan."},
 	{Name: colFullName, Required: true, Note: "Nama lengkap."},
 	{Name: colEmail, Note: "Opsional. Harus unik."},
-	{Name: colExternalID, Note: "Opsional. NIS/NISN/ID karyawan. Harus unik."},
+	{Name: colExternalID, Note: "Opsional. ID peserta dari sistem lain (nomor induk, ID karyawan). Harus unik."},
 	{Name: colPassword, Note: "Opsional. Kosong = dibuatkan password sementara (unduh sekali setelah impor). Minimal 8 karakter."},
 	{Name: colRoles, Note: "Opsional. Kode peran dipisah koma: participant, author, proctor, grader, admin. Kosong = participant."},
-	{Name: colGroups, Note: "Opsional. Kode grup dipisah koma, grup harus sudah ada. Contoh: X-IPA-1."},
+	{Name: colGroups, Note: "Opsional. Kode grup dipisah koma, grup harus sudah ada. Contoh: ANGKATAN-2026."},
 	{Name: colMustChange, Note: "Opsional. ya/tidak. Kosong = ya (wajib ganti password saat login pertama)."},
 }
 
@@ -41,7 +41,7 @@ var groupColumns = []spreadsheet.Column{
 	{Name: colCode, Required: true, Note: "Kode unik per periode. Dipakai kolom groups saat impor pengguna."},
 	{Name: colName, Required: true, Note: "Nama grup."},
 	{Name: colKind, Required: true, Note: "level, class, department, team, batch, atau other."},
-	{Name: colPeriod, Note: "Opsional. Contoh: 2026/2027 atau Rekrutmen Q1 2027."},
+	{Name: colPeriod, Note: "Opsional. Contoh: 2026 atau Rekrutmen Q1 2027."},
 	{Name: colParentCode, Note: "Opsional. Kode grup induk: grup di file ini atau yang sudah ada."},
 }
 
@@ -49,15 +49,15 @@ var groupColumns = []spreadsheet.Column{
 func Template(kind modelImport.Kind) spreadsheet.Template {
 	common := []string{
 		"Isi data di sheet \"Data\" mulai baris 2. Jangan ubah nama kolom di baris 1.",
-		"Kolom bertanda * wajib diisi. Semua sel berformat teks agar angka 0 di depan (NIS) tidak hilang.",
+		"Kolom bertanda * wajib diisi. Semua sel berformat teks agar angka 0 di depan (mis. pada ID peserta) tidak hilang.",
 		"Bisa juga diunggah sebagai CSV (pemisah koma atau titik koma) dengan nama kolom yang sama.",
 	}
 	if kind == modelImport.KindGroups {
 		return spreadsheet.Template{
 			Columns: groupColumns,
 			Examples: [][]string{
-				{"X", "Kelas X", "level", "2026/2027", ""},
-				{"X-IPA-1", "X IPA 1", "class", "2026/2027", "X"},
+				{"ANGKATAN-2026", "Angkatan 2026", "batch", "2026", ""},
+				{"ANGKATAN-2026-A", "Angkatan 2026 Kelompok A", "class", "2026", "ANGKATAN-2026"},
 			},
 			Instructions: append(common, "Grup induk boleh ditulis di baris mana pun dalam file yang sama."),
 		}
@@ -65,8 +65,8 @@ func Template(kind modelImport.Kind) spreadsheet.Template {
 	return spreadsheet.Template{
 		Columns: userColumns,
 		Examples: [][]string{
-			{"0051234567", "Budi Santoso", "", "0051234567", "", "participant", "X-IPA-1", ""},
-			{"bu.ani", "Ani Wulandari", "ani@sekolah.sch.id", "", "", "author,grader", "", "ya"},
+			{"0051234567", "Budi Santoso", "", "0051234567", "", "participant", "ANGKATAN-2026-A", ""},
+			{"ani.wulandari", "Ani Wulandari", "ani@contoh.id", "", "", "author,grader", "", "ya"},
 		},
 		Instructions: append(common, fmt.Sprintf("Maksimal %d baris per file, ukuran maksimal 5 MB.", modelImport.MaxRows)),
 	}

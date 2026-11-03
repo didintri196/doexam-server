@@ -89,8 +89,8 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET | `/api/v1/groups/:id/members` 🔒 | Anggota grup (leader dulu) |
 | POST | `/api/v1/groups/:id/members` 🔒 `group.manage` | Tambah anggota `{user_ids[≤500], member_role?}`; anggota lama diperbarui perannya |
 | DELETE | `/api/v1/groups/:id/members/:user_id` 🔒 `group.manage` | Keluarkan anggota |
-| GET/POST | `/api/v1/subjects` 🔒 | Daftar (`q`, `page`) / buat mapel `{code, name}` |
-| GET/PATCH/DELETE | `/api/v1/subjects/:id` 🔒 | Detail / ubah / hapus mapel (409 bila masih punya bank soal) |
+| GET/POST | `/api/v1/subjects` 🔒 | Daftar (`q`, `page`) / buat subjek `{code, name}` |
+| GET/PATCH/DELETE | `/api/v1/subjects/:id` 🔒 | Detail / ubah / hapus subjek (409 bila masih punya bank soal) |
 | GET/POST | `/api/v1/subjects/:id/competencies` 🔒 | Pohon kompetensi (flat, susun dari `parent_id`) / tambah `{code, name, parent_id?, sort_order?}` |
 | PATCH/DELETE | `/api/v1/competencies/:id` 🔒 | Ubah / pindah induk / hapus (409 bila punya anak atau dipakai soal) |
 | GET/POST | `/api/v1/item-banks` 🔒 | Bank yang bisa diakses (`subject_id`, `q`) / buat bank `{subject_id, name, description?}` (pembuat jadi owner) |
@@ -180,7 +180,7 @@ Pengaman manajemen pengguna: tidak bisa men-suspend/menghapus/me-reset diri send
 ```bash
 curl -X POST localhost:8080/api/v1/setup -H 'Content-Type: application/json' -d '{
   "tenant_name": "SMAN 1", "preset": "school",
-  "admin_username": "admin", "admin_full_name": "Admin Sekolah", "admin_password": "ganti-saya-123"
+  "admin_username": "admin", "admin_full_name": "Administrator", "admin_password": "ganti-saya-123"
 }'
 
 curl -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' \
@@ -188,7 +188,7 @@ curl -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json
 # → data.token, pakai sebagai: Authorization: Bearer <token>
 ```
 
-`preset`: `school` (peran: Guru, Siswa, …), `company` (Penyusun Tes, Kandidat, …), atau `custom`.
+`preset`: opsional, `school`, `company`, atau `custom` (default). Tidak mengubah nama peran: semua institusi mendapat peran bernama netral (Administrator, Penyusun Soal, Pengawas, Penilai, Peserta) yang bisa diganti admin.
 
 Satu instalasi = satu institusi: pengguna tidak perlu tahu slug tenant. Nama, logo, zona waktu, dan kop diatur admin lewat `PATCH /api/v1/tenant` dan `PUT /api/v1/tenant/logo`.
 
