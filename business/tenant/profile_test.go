@@ -41,14 +41,14 @@ func TestUpdate(t *testing.T) {
 
 	dto, err := svc.Update(ctx, adminP, modelTenant.UpdateInput{
 		Name: ptr(" SMA Negeri 1 "), Timezone: ptr("Asia/Makassar"), Locale: ptr("en"),
-		PrimaryColor: ptr("#1D4ED8"), Letterhead: ptr("Jl. Merdeka 1"),
+		PrimaryColor: ptr("#1D4ED8"), Tagline: ptr(" Ujian Online "), Letterhead: ptr("Jl. Merdeka 1"),
 	}, noClient)
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	s := dto.Settings
 	if dto.Name != "SMA Negeri 1" || s.Timezone != "Asia/Makassar" || s.Locale != "en" ||
-		s.PrimaryColor == nil || *s.PrimaryColor != "#1d4ed8" || s.Letterhead != "Jl. Merdeka 1" {
+		s.PrimaryColor == nil || *s.PrimaryColor != "#1d4ed8" || s.Tagline != "Ujian Online" || s.Letterhead != "Jl. Merdeka 1" {
 		t.Fatalf("dto = %+v", dto)
 	}
 	if len(store.audits) != 1 || store.audits[0].Action != modelAudit.ActionTenantUpdate {
@@ -89,6 +89,7 @@ func TestUpdateRejected(t *testing.T) {
 		{name: "local timezone", p: adminP, in: modelTenant.UpdateInput{Timezone: ptr("Local")}, wantErr: errr.ErrInvalidInput, wantField: "timezone"},
 		{name: "bad locale", p: adminP, in: modelTenant.UpdateInput{Locale: ptr("fr")}, wantErr: errr.ErrInvalidInput, wantField: "locale"},
 		{name: "bad color", p: adminP, in: modelTenant.UpdateInput{PrimaryColor: ptr("blue")}, wantErr: errr.ErrInvalidInput, wantField: "primary_color"},
+		{name: "long tagline", p: adminP, in: modelTenant.UpdateInput{Tagline: ptr(strings.Repeat("é", 101))}, wantErr: errr.ErrInvalidInput, wantField: "tagline"},
 		{name: "long letterhead", p: adminP, in: modelTenant.UpdateInput{Letterhead: ptr(strings.Repeat("é", 501))}, wantErr: errr.ErrInvalidInput, wantField: "letterhead"},
 	}
 	for _, tt := range tests {
@@ -187,12 +188,12 @@ func TestPublic(t *testing.T) {
 	ctx := context.Background()
 
 	svc, store, _ := profileFixture()
-	store.tenants[0].Settings = modelTenant.Settings{Locale: "en", PrimaryColor: "#112233", Letterhead: "internal"}.Encode()
+	store.tenants[0].Settings = modelTenant.Settings{Locale: "en", PrimaryColor: "#112233", Tagline: "Ujian Online", Letterhead: "internal"}.Encode()
 	dto, err := svc.Public(ctx, "")
 	if err != nil {
 		t.Fatalf("public: %v", err)
 	}
-	if dto.Slug != "sman1" || dto.Name != "SMAN 1" || dto.Locale != "en" || *dto.PrimaryColor != "#112233" || dto.LogoURL != nil {
+	if dto.Slug != "sman1" || dto.Name != "SMAN 1" || dto.Locale != "en" || *dto.PrimaryColor != "#112233" || dto.Tagline != "Ujian Online" || dto.LogoURL != nil {
 		t.Fatalf("dto = %+v", dto)
 	}
 	if _, err := svc.Public(ctx, "nope"); !errr.IsNotFound(err) {

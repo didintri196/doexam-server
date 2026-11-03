@@ -54,6 +54,7 @@ func (s *TenantService) Update(ctx context.Context, p modelAuth.Principal, in mo
 		set(&st.Timezone, in.Timezone)
 		set(&st.Locale, in.Locale)
 		set(&st.PrimaryColor, in.PrimaryColor)
+		set(&st.Tagline, in.Tagline)
 		set(&st.Letterhead, in.Letterhead)
 		if name == t.Name && st == before {
 			updated = t
@@ -256,6 +257,10 @@ func validateUpdate(in modelTenant.UpdateInput) error {
 	}
 	if in.PrimaryColor != nil && *in.PrimaryColor != "" {
 		v.Check(modelTenant.ColorPattern.MatchString(*in.PrimaryColor), "primary_color", "must be a #RRGGBB color")
+	}
+	if in.Tagline != nil {
+		v.Check(utf8.RuneCountInString(*in.Tagline) <= modelTenant.MaxTaglineLen, "tagline",
+			fmt.Sprintf("max %d chars", modelTenant.MaxTaglineLen))
 	}
 	if in.Letterhead != nil {
 		v.Check(utf8.RuneCountInString(*in.Letterhead) <= modelTenant.MaxLetterheadLen, "letterhead",

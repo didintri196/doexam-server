@@ -65,13 +65,13 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET | `/readyz` | Readiness — 200 jika semua dependency (DB) up, 503 jika tidak |
 | POST | `/api/v1/setup` | Setup awal: buat tenant (institusi), 5 peran bawaan, dan admin. Hanya bisa sekali (409 setelahnya). `tenant_slug` opsional, dibuat dari `tenant_name` |
 | POST | `/api/v1/auth/login` | Login `{username, password}` → token sesi. `tenant` (slug) hanya wajib bila instalasi melayani lebih dari satu institusi |
-| GET | `/api/v1/public/tenant` | Tanpa login, untuk layar login: nama, preset, locale, warna, `logo_url`. Query `tenant` opsional (wajib bila > 1 institusi). 404 `setup not completed` sebelum setup |
+| GET | `/api/v1/public/tenant` | Tanpa login, untuk layar login & header klien: nama, `tagline`, preset, locale, warna, `logo_url`. Query `tenant` opsional (wajib bila > 1 institusi). 404 `setup not completed` sebelum setup |
 | GET | `/api/v1/public/tenant/logo` | Tanpa login: file logo (PNG/JPEG/WebP), dengan `ETag` + cache 1 hari. Query `tenant` opsional |
 | GET | `/api/v1/auth/me` 🔒 | Profil, tenant, peran, dan izin pengguna yang login |
 | POST | `/api/v1/auth/logout` 🔒 | Cabut sesi saat ini |
 | POST | `/api/v1/auth/change-password` 🔒 | Ganti password; sesi lain milik user ikut dicabut |
 | GET | `/api/v1/tenant` 🔒 | Profil institusi + `settings` efektif (zona waktu, locale, warna, kop, `logo_url`) |
-| PATCH | `/api/v1/tenant` 🔒 `tenant.manage` | Ubah `name`, `timezone` (IANA), `locale` (`id`/`en`), `primary_color` (`#RRGGBB`), `letterhead` (teks kop, maks 500). `""` = kembali ke default |
+| PATCH | `/api/v1/tenant` 🔒 `tenant.manage` | Ubah `name`, `timezone` (IANA), `locale` (`id`/`en`), `primary_color` (`#RRGGBB`), `tagline` (sub judul header, maks 100), `letterhead` (teks kop, maks 500). `""` = kembali ke default |
 | PUT | `/api/v1/tenant/logo` 🔒 `tenant.manage` | Unggah logo (multipart `file`, PNG/JPEG/WebP maks 1 MiB, jenis dideteksi dari isi; SVG ditolak) |
 | DELETE | `/api/v1/tenant/logo` 🔒 `tenant.manage` | Hapus logo |
 | GET | `/api/v1/roles` 🔒 `user.manage` | Daftar peran tenant (untuk memilih peran) |

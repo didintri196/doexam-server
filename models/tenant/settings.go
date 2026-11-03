@@ -16,6 +16,7 @@ const (
 const (
 	MaxNameLen       = 200
 	MaxLetterheadLen = 500
+	MaxTaglineLen    = 100
 	MaxLogoBytes     = 1 << 20 // 1 MiB
 )
 
@@ -38,6 +39,7 @@ type Settings struct {
 	Timezone     string `json:"timezone,omitempty"`      // IANA name, e.g. Asia/Makassar
 	Locale       string `json:"locale,omitempty"`        // one of Locales
 	PrimaryColor string `json:"primary_color,omitempty"` // #RRGGBB
+	Tagline      string `json:"tagline,omitempty"`       // plain text under the name in the clients' header
 	Letterhead   string `json:"letterhead,omitempty"`    // plain text for exam cards and printed reports
 	LogoFileID   string `json:"logo_file_id,omitempty"`  // media_files.id
 }
