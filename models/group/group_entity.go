@@ -32,7 +32,7 @@ type MemberRole string
 
 const (
 	MemberRoleMember MemberRole = "member"
-	MemberRoleLeader MemberRole = "leader" // wali kelas / atasan
+	MemberRoleLeader MemberRole = "leader" // pembina / ketua / atasan
 )
 
 // GroupEntity mirrors the groups table.
