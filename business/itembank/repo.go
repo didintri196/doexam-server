@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -118,6 +119,23 @@ func (r *ItemBankRepo) SubjectExists(ctx context.Context, id string) (bool, erro
 
 func (r *ItemBankRepo) CompetencyInSubject(ctx context.Context, competencyID, subjectID string) (bool, error) {
 	return r.exists(ctx, "SELECT 1 FROM competencies WHERE id = ? AND subject_id = ? AND deleted_at IS NULL", competencyID, subjectID)
+}
+
+func (r *ItemBankRepo) CompetencyIDsByCode(ctx context.Context, subjectID string) (map[string]string, error) {
+	var rows []struct {
+		ID   string
+		Code string
+	}
+	err := dbpg.Conn(ctx, r.db).Table("competencies").Select("id, code").
+		Where("subject_id = ? AND deleted_at IS NULL AND code IS NOT NULL", subjectID).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("competencies of subject %s: %w", subjectID, err)
+	}
+	out := make(map[string]string, len(rows))
+	for _, c := range rows {
+		out[strings.ToLower(strings.TrimSpace(c.Code))] = c.ID
+	}
+	return out, nil
 }
 
 func (r *ItemBankRepo) UserExists(ctx context.Context, id string) (bool, error) {

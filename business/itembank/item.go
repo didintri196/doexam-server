@@ -128,14 +128,34 @@ func (s *ItemBankService) CreateItem(ctx context.Context, p modelAuth.Principal,
 	ctx, span := s.tracer.Start(ctx, "ItemBankService.CreateItem", trace.WithAttributes(attribute.String("bank.id", bankID)))
 	defer span.End()
 
+	it, ver, err := s.prepareItem(p, bankID, &in)
+	if err != nil {
+		return modelBank.ItemDTO{}, fail(span, err)
+	}
+	var out modelBank.ItemDTO
+	err = s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
+		bank, _, err := s.bankAccess(ctx, p, bankID, levelWrite)
+		if err != nil {
+			return err
+		}
+		out, err = s.insertItem(ctx, p, bank, in, it, ver, client)
+		return err
+	})
+	if err != nil {
+		return modelBank.ItemDTO{}, fail(span, err)
+	}
+	return out, nil
+}
+
+// prepareItem validates a new item and builds its rows (no database access).
+func (s *ItemBankService) prepareItem(p modelAuth.Principal, bankID string, in *modelBank.ItemInput) (modelBank.ItemEntity, modelBank.ItemVersionEntity, error) {
 	v := errr.Validation{}
 	normalizeMeta(&in.VersionInput, v)
 	body := normalizeBody(in.Type, in.Content, in.AnswerKey, in.Scoring, v)
 	code := normalizeCode(in.Code, v)
 	if err := v.Err(); err != nil {
-		return modelBank.ItemDTO{}, fail(span, err)
+		return modelBank.ItemEntity{}, modelBank.ItemVersionEntity{}, err
 	}
-
 	now := s.now().UTC()
 	it := modelBank.ItemEntity{
 		ID: newID(), TenantID: p.TenantID, BankID: bankID, Code: code, Status: modelBank.StatusDraft,
@@ -148,31 +168,27 @@ func (s *ItemBankService) CreateItem(ctx context.Context, p modelAuth.Principal,
 	applyBody(&ver, body)
 	applyMeta(&ver, in.VersionInput)
 	it.CurrentVersionID = &ver.ID
+	return it, ver, nil
+}
 
-	var out modelBank.ItemDTO
-	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
-		bank, _, err := s.bankAccess(ctx, p, bankID, levelWrite)
-		if err != nil {
-			return err
-		}
-		if err := s.resolveRefs(ctx, bank, in.VersionInput, &ver); err != nil {
-			return err
-		}
-		if err := s.checkItemMedia(ctx, ver); err != nil {
-			return err
-		}
-		if err := s.storer.CreateItem(ctx, &it, &ver); err != nil {
-			return err
-		}
-		if out, err = s.toItemDTO(ctx, it, ver); err != nil {
-			return err
-		}
-		return s.audit(ctx, p, client, modelAudit.ActionItemCreate, "item", it.ID, nil, out)
-	})
-	if err != nil {
-		return modelBank.ItemDTO{}, fail(span, err)
+// insertItem resolves references, checks media and stores a prepared item with its audit
+// entry. It runs inside the caller's tenant transaction after the bank access check.
+func (s *ItemBankService) insertItem(ctx context.Context, p modelAuth.Principal, bank modelBank.BankEntity, in modelBank.ItemInput,
+	it modelBank.ItemEntity, ver modelBank.ItemVersionEntity, client modelAudit.Client) (modelBank.ItemDTO, error) {
+	if err := s.resolveRefs(ctx, bank, in.VersionInput, &ver); err != nil {
+		return modelBank.ItemDTO{}, err
 	}
-	return out, nil
+	if err := s.checkItemMedia(ctx, ver); err != nil {
+		return modelBank.ItemDTO{}, err
+	}
+	if err := s.storer.CreateItem(ctx, &it, &ver); err != nil {
+		return modelBank.ItemDTO{}, err
+	}
+	out, err := s.toItemDTO(ctx, it, ver)
+	if err != nil {
+		return modelBank.ItemDTO{}, err
+	}
+	return out, s.audit(ctx, p, client, modelAudit.ActionItemCreate, "item", it.ID, nil, out)
 }
 
 // UpdateItem changes an item. Versioned fields (type, content, answer_key, scoring,

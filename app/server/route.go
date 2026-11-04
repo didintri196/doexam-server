@@ -84,7 +84,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	groupSvc := group.NewGroupService(groupRepo, txManager, logger)
 	importSvc := importer.NewImportService(importRepo, txManager, fileStore, importHasher, credentialVault, logger)
 	subjectSvc := subject.NewSubjectService(subjectRepo, txManager, logger)
-	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, logger)
+	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, mediaSvc, logger)
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
 	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, logger)
 	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, logger)
@@ -189,6 +189,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	v1.Delete("/competencies/:id", requireAuth, subjectHandler.DeleteCompetency)
 
 	banks := v1.Group("/item-banks", requireAuth)
+	banks.Get("/import-word/template", itemBankHandler.WordTemplate)
 	banks.Get("/", itemBankHandler.ListBanks)
 	banks.Post("/", itemBankHandler.CreateBank)
 	banks.Get("/:id", itemBankHandler.GetBank)
@@ -201,6 +202,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	banks.Post("/:id/stimuli", itemBankHandler.CreateStimulus)
 	banks.Get("/:id/items", itemBankHandler.ListItems)
 	banks.Post("/:id/items", itemBankHandler.CreateItem)
+	banks.Post("/:id/import-word", itemBankHandler.ImportWord)
 
 	stimuli := v1.Group("/stimuli", requireAuth)
 	stimuli.Get("/:id", itemBankHandler.GetStimulus)
