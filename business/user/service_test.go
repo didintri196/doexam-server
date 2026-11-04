@@ -346,9 +346,13 @@ func TestResetPassword(t *testing.T) {
 }
 
 func TestListValidatesFilter(t *testing.T) {
-	_, _, err := newService(newStore()).List(context.Background(), adminP,
-		modelUser.ListFilter{Page: 1, PerPage: 20, Status: "deleted"})
-	if !errors.Is(err, errr.ErrInvalidInput) {
-		t.Fatalf("err = %v, want ErrInvalidInput", err)
+	for _, f := range []modelUser.ListFilter{
+		{Page: 1, PerPage: 20, Status: "deleted"},
+		{Page: 1, PerPage: 20, Kind: "teacher"},
+	} {
+		_, _, err := newService(newStore()).List(context.Background(), adminP, f)
+		if !errors.Is(err, errr.ErrInvalidInput) {
+			t.Fatalf("%+v: err = %v, want ErrInvalidInput", f, err)
+		}
 	}
 }

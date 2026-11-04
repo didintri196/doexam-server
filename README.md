@@ -83,7 +83,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | PUT | `/api/v1/tenant/card-signature` 🔒 `tenant.manage` | Unggah gambar tanda tangan/stempel untuk kartu peserta (aturan file sama dengan logo). Tidak publik: `settings.card.signature_url` dan data cetak sesi memakai link bertanda tangan |
 | DELETE | `/api/v1/tenant/card-signature` 🔒 `tenant.manage` | Hapus gambar tanda tangan kartu |
 | GET | `/api/v1/roles` 🔒 `user.manage` | Daftar peran tenant (untuk memilih peran) |
-| GET | `/api/v1/users` 🔒 `user.manage` | Daftar pengguna. Query: `q`, `role`, `group_id`, `status`, `page`, `per_page` |
+| GET | `/api/v1/users` 🔒 `user.manage` | Daftar pengguna. Query: `q`, `role`, `kind` (`staff` = punya izin selain `attempt.take`, `participant` = punya `attempt.take`), `group_id`, `status`, `page`, `per_page` |
 | POST | `/api/v1/users` 🔒 `user.manage` | Buat pengguna. Tanpa `password` → `temporary_password` dibuat & ditampilkan **sekali**. Peran default `participant` |
 | GET | `/api/v1/users/:id` 🔒 `user.manage` | Detail pengguna + peran + grup |
 | PATCH | `/api/v1/users/:id` 🔒 `user.manage` | Ubah `full_name`, `email`, `external_id`, `status`, `role_codes` (ganti semua). `""` mengosongkan email/external_id |

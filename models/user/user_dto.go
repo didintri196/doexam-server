@@ -14,9 +14,21 @@ type ListFilter struct {
 	PerPage  int
 	Query    string               // matches username, full_name, external_id, email
 	RoleCode string               // has this role
+	Kind     UserKind             // "" = any
 	GroupID  string               // member of this group
 	Status   modelAuth.UserStatus // "" = any
 }
+
+// UserKind splits users the way the two clients do: staff hold a permission other than
+// attempt.take (they sign in to the panel), participants hold attempt.take. Someone
+// with both shows in both lists.
+type UserKind string
+
+// User kinds for GET /api/v1/users?kind=.
+const (
+	KindStaff       UserKind = "staff"
+	KindParticipant UserKind = "participant"
+)
 
 // CreateInput is the body of POST /api/v1/users.
 // Password empty → a temporary password is generated and returned once.

@@ -81,6 +81,7 @@ func (s *UserService) List(ctx context.Context, p modelAuth.Principal, f modelUs
 	v.Check(f.Status == "" || f.Status == modelAuth.UserStatusActive || f.Status == modelAuth.UserStatusSuspended,
 		"status", "must be active or suspended")
 	v.Check(f.GroupID == "" || uuid.Validate(f.GroupID) == nil, "group_id", "must be a UUID")
+	v.Check(f.Kind == "" || f.Kind == modelUser.KindStaff || f.Kind == modelUser.KindParticipant, "kind", "must be staff or participant")
 	if err := v.Err(); err != nil {
 		return nil, 0, err
 	}
