@@ -32,6 +32,19 @@ func PublicTemplate(c *fiber.Ctx) error {
 		c.Set(fiber.HeaderContentType, docxMIME)
 		c.Set(fiber.HeaderContentDisposition, `attachment; filename="`+name+`"`)
 		return c.Status(fiber.StatusOK).Send(data)
+	case "template-staf.xlsx", "template-peserta.xlsx", "template-peserta-grup.xlsx":
+		t := modelImport.Target{Audience: modelImport.AudienceParticipant}
+		switch name {
+		case "template-staf.xlsx":
+			t.Audience = modelImport.AudienceStaff
+		case "template-peserta-grup.xlsx":
+			t.GroupID = "any" // only selects the columns; the group is chosen at upload
+		}
+		var buf bytes.Buffer
+		if err := spreadsheet.WriteTemplate(&buf, importer.TemplateFor(modelImport.KindUsers, t)); err != nil {
+			return handleError(c, logger, "failed to write import template", err)
+		}
+		return sendXLSX(c, name, buf.Bytes())
 	case "template-impor-users.xlsx", "template-impor-groups.xlsx":
 		kind := modelImport.KindUsers
 		if name == "template-impor-groups.xlsx" {

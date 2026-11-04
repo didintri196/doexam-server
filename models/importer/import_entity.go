@@ -24,7 +24,32 @@ const (
 	StatusFailed     Status = "failed"
 )
 
-// ImportJobEntity mirrors the import_jobs table (target is left to its DB default).
+// Audience narrows a user import (DOCS/PLAN/13-IMPOR-PER-MENU.md). Empty is the
+// original import: any role, any group.
+type Audience string
+
+// Audiences of a user import.
+const (
+	AudienceStaff       Audience = "staff"       // staff roles only, no groups column
+	AudienceParticipant Audience = "participant" // the participant role for every row
+)
+
+// Target is import_jobs.target: where the rows go.
+type Target struct {
+	Audience Audience `json:"audience,omitempty"`
+	// GroupID imports a participant list into one group: existing accounts are added
+	// to the group instead of being rejected.
+	GroupID string `json:"group_id,omitempty"`
+}
+
+// Summary is import_jobs.summary: rows by outcome.
+type Summary struct {
+	Created       int `json:"created"`
+	Added         int `json:"added,omitempty"`          // existing accounts added to the target group
+	AlreadyMember int `json:"already_member,omitempty"` // already in the target group, skipped
+}
+
+// ImportJobEntity mirrors the import_jobs table.
 type ImportJobEntity struct {
 	ID           string `gorm:"type:uuid;primaryKey"`
 	TenantID     string `gorm:"type:uuid;not null"`
@@ -35,6 +60,8 @@ type ImportJobEntity struct {
 	OkRows       int
 	ErrorRows    int
 	Errors       []byte  `gorm:"type:jsonb;not null"` // JSON array of RowError
+	Target       []byte  `gorm:"type:jsonb;not null"` // JSON Target
+	Summary      []byte  `gorm:"type:jsonb;not null"` // JSON Summary
 	CreatedBy    *string `gorm:"type:uuid"`
 	CreatedAt    time.Time
 	FinishedAt   *time.Time

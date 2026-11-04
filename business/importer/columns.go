@@ -45,6 +45,69 @@ var groupColumns = []spreadsheet.Column{
 	{Name: colParentCode, Note: "Opsional. Kode grup induk: grup di file ini atau yang sudah ada."},
 }
 
+// column picks userColumns by name, optionally overriding required and note.
+func column(name string, required bool, note string) spreadsheet.Column {
+	for _, c := range userColumns {
+		if c.Name == name {
+			if note != "" {
+				c.Note = note
+			}
+			c.Required = c.Required || required
+			return c
+		}
+	}
+	panic("unknown import column " + name) // programming error: names are constants
+}
+
+// TemplateFor returns the template of a user import narrowed by target
+// (DOCS/PLAN/13-IMPOR-PER-MENU.md): only the columns that import reads.
+func TemplateFor(kind modelImport.Kind, t modelImport.Target) spreadsheet.Template {
+	if kind != modelImport.KindUsers || t.Audience == "" {
+		return Template(kind)
+	}
+	common := []string{
+		"Isi data di sheet \"Data\" mulai baris 2. Jangan ubah nama kolom di baris 1.",
+		"Kolom bertanda * wajib diisi. Semua sel berformat teks agar angka 0 di depan (mis. pada ID peserta) tidak hilang.",
+		"Bisa juga diunggah sebagai CSV (pemisah koma atau titik koma) dengan nama kolom yang sama.",
+		fmt.Sprintf("Maksimal %d baris per file, ukuran maksimal 5 MB.", modelImport.MaxRows),
+	}
+	if t.Audience == modelImport.AudienceStaff {
+		return spreadsheet.Template{
+			Columns: []spreadsheet.Column{
+				column(colUsername, true, ""), column(colFullName, true, ""), column(colEmail, false, ""), column(colPassword, false, ""),
+				column(colRoles, true, "Wajib. Kode peran staf dipisah koma: admin, author, proctor, grader. Peserta diimpor dari halaman Peserta."),
+				column(colMustChange, false, ""),
+			},
+			Examples: [][]string{
+				{"sri.pengawas", "Sri Lestari", "sri@contoh.id", "", "proctor", ""},
+				{"ani.wulandari", "Ani Wulandari", "ani@contoh.id", "", "author,grader", "ya"},
+			},
+			Instructions: common,
+		}
+	}
+	cols := []spreadsheet.Column{
+		column(colUsername, true, ""), column(colFullName, true, ""), column(colExternalID, false, ""),
+		column(colEmail, false, ""), column(colPassword, false, ""),
+	}
+	example := [][]string{
+		{"0051234567", "Budi Santoso", "0051234567", "", ""},
+		{"0051234568", "Siti Aminah", "0051234568", "", ""},
+	}
+	if t.GroupID == "" {
+		cols = append(cols, column(colGroups, false, ""))
+		example[0] = append(example[0], "ANGKATAN-2026-A")
+		example[1] = append(example[1], "")
+	} else {
+		common = append(common,
+			"Semua baris dimasukkan ke grup tujuan. Peserta yang sudah punya akun (username atau ID peserta sama) cukup dimasukkan ke grup; data akunnya tidak diubah.")
+	}
+	cols = append(cols, column(colMustChange, false, ""))
+	for i := range example {
+		example[i] = append(example[i], "")
+	}
+	return spreadsheet.Template{Columns: cols, Examples: example, Instructions: common}
+}
+
 // Template returns the downloadable template for kind.
 func Template(kind modelImport.Kind) spreadsheet.Template {
 	common := []string{
