@@ -55,6 +55,7 @@ var transitions = map[modelSession.Status][]modelSession.Status{
 // assigned to, and there may read the token, change the status (except cancel) and
 // record attendance/seat/notes. Other sessions are "not found" for them.
 type SessionService struct {
+	hasher   PasswordHasher // card passwords
 	storer   SessionStorer
 	tx       TxManager
 	attempts AttemptFinalizer
@@ -64,8 +65,8 @@ type SessionService struct {
 }
 
 // NewSessionService returns a concrete SessionService.
-func NewSessionService(storer SessionStorer, tx TxManager, attempts AttemptFinalizer, logger *slog.Logger) *SessionService {
-	return &SessionService{storer: storer, tx: tx, attempts: attempts, now: time.Now, tracer: otel.Tracer("doexam.service.session"), logger: logger}
+func NewSessionService(storer SessionStorer, tx TxManager, attempts AttemptFinalizer, hasher PasswordHasher, logger *slog.Logger) *SessionService {
+	return &SessionService{storer: storer, tx: tx, attempts: attempts, hasher: hasher, now: time.Now, tracer: otel.Tracer("doexam.service.session"), logger: logger}
 }
 
 // List returns sessions: all for managers, assigned ones for proctors.

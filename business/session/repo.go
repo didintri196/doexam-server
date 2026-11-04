@@ -261,6 +261,26 @@ func (r *SessionRepo) PrintParticipants(ctx context.Context, sessionID string) (
 	return out, wrap(err, "print participants")
 }
 
+func (r *SessionRepo) CardCandidates(ctx context.Context, sessionID string) ([]CardCandidate, error) {
+	var out []CardCandidate
+	err := dbpg.Conn(ctx, r.db).Table("exam_session_participants sp").
+		Joins("JOIN users u ON u.id = sp.user_id AND u.deleted_at IS NULL").Where("sp.session_id = ?", sessionID).
+		Select("sp.user_id, u.last_login_at IS NOT NULL AS signed_in, u.status = 'active' AS active").
+		Order("u.full_name, u.id").Scan(&out).Error
+	return out, wrap(err, "card candidates")
+}
+
+func (r *SessionRepo) SetCardPasswords(ctx context.Context, hashes map[string]string) error {
+	for id, h := range hashes {
+		err := dbpg.Conn(ctx, r.db).Table("users").Where("id = ? AND deleted_at IS NULL", id).
+			Updates(map[string]any{"password_hash": h, "must_change_password": false}).Error
+		if err != nil {
+			return wrap(err, "set card password")
+		}
+	}
+	return nil
+}
+
 func (r *SessionRepo) FindTenant(ctx context.Context, id string) (modelTenant.TenantEntity, error) {
 	var t modelTenant.TenantEntity
 	err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&t).Error

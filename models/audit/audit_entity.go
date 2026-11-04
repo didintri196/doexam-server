@@ -60,6 +60,7 @@ const (
 	ActionSessionStatus      = "session.status"
 	ActionSessionTokenRotate = "session.token_rotate"
 	ActionSessionProctors    = "session.proctors"
+	ActionCardPasswords      = "session.card_passwords" // passwords themselves are never logged
 	ActionParticipantAdd     = "session.participant_add"
 	ActionParticipantUpdate  = "session.participant_update"
 	ActionParticipantRemove  = "session.participant_remove"

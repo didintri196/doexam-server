@@ -224,3 +224,22 @@ func (h *SessionHandler) Print(c *fiber.Ctx) error {
 	}
 	return SuccessResponse(c, fiber.StatusOK, "session print data", dto)
 }
+
+// CardPasswords handles POST /api/v1/sessions/:id/card-passwords {only_new?}: new system
+// passwords for the participant cards, shown once (never cached).
+func (h *SessionHandler) CardPasswords(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+
+	var in modelSession.CardPasswordsInput
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&in); err != nil {
+			return badBody(c)
+		}
+	}
+	dto, err := h.sessionSvc.GenerateCardPasswords(c.UserContext(), principal(c), c.Params("id"), in, clientInfo(c))
+	if err != nil {
+		return handleError(c, logger, "failed to generate card passwords", err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return SuccessResponse(c, fiber.StatusOK, "card passwords generated", dto)
+}

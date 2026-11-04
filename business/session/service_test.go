@@ -167,7 +167,7 @@ func newFixture(status modelSession.Status) (*SessionService, *fakeStore) {
 		participants: map[string]modelSession.ParticipantEntity{}, attempts: map[string]int64{},
 		activeUsers: []string{u1, u2, u3},
 	}
-	svc := NewSessionService(store, fakeTx{}, &fakeFinalizer{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := NewSessionService(store, fakeTx{}, &fakeFinalizer{}, fakeHasher{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	svc.now = func() time.Time { return now.Add(10 * time.Minute) }
 	return svc, store
 }
@@ -385,5 +385,58 @@ func TestPrintStats(t *testing.T) {
 	want := modelSession.PrintStatsDTO{Registered: 7, Present: 4, Absent: 1, Excused: 1, Started: 3, Submitted: 2}
 	if got != want {
 		t.Fatalf("stats = %+v, want %+v", got, want)
+	}
+}
+
+type fakeHasher struct{}
+
+func (fakeHasher) Hash(_ context.Context, pw string) (string, error) { return "hash:" + pw, nil }
+
+type cardStore struct {
+	*fakeStore
+	cands  []CardCandidate
+	stored map[string]string
+}
+
+func (c *cardStore) CardCandidates(context.Context, string) ([]CardCandidate, error) {
+	return c.cands, nil
+}
+func (c *cardStore) SetCardPasswords(_ context.Context, h map[string]string) error {
+	c.stored = h
+	return nil
+}
+
+func TestGenerateCardPasswords(t *testing.T) {
+	_, base := newFixture(modelSession.StatusScheduled)
+	store := &cardStore{fakeStore: base, cands: []CardCandidate{
+		{UserID: "u-new", Active: true},
+		{UserID: "u-used", Active: true, SignedIn: true},
+		{UserID: "u-off", Active: false},
+	}}
+	svc := NewSessionService(store, fakeTx{}, &fakeFinalizer{}, fakeHasher{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+	admin := modelAuth.Principal{TenantID: tenantID, UserID: "admin", Permissions: []string{modelAuth.PermSessionManage, modelAuth.PermUserManage}}
+
+	out, err := svc.GenerateCardPasswords(ctx, admin, sessionID, modelSession.CardPasswordsInput{}, modelAudit.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Passwords) != 1 || out.Passwords[0].UserID != "u-new" || len(out.Passwords[0].Password) != cardPasswordLen || out.Skipped != 2 {
+		t.Fatalf("only new: %+v", out)
+	}
+	if store.stored["u-new"] != "hash:"+out.Passwords[0].Password {
+		t.Fatalf("stored = %v", store.stored)
+	}
+	all := false
+	out, err = svc.GenerateCardPasswords(ctx, admin, sessionID, modelSession.CardPasswordsInput{OnlyNew: &all}, modelAudit.Client{})
+	if err != nil || len(out.Passwords) != 2 || out.Skipped != 1 {
+		t.Fatalf("all active: %+v err=%v", out, err)
+	}
+	last := base.audits[len(base.audits)-1]
+	if last != modelAudit.ActionCardPasswords {
+		t.Fatalf("audit = %v", base.audits)
+	}
+	if _, err := svc.GenerateCardPasswords(ctx, managerP, sessionID, modelSession.CardPasswordsInput{}, modelAudit.Client{}); !errors.Is(err, errr.ErrForbidden) {
+		t.Fatalf("without user.manage: err = %v", err)
 	}
 }

@@ -39,6 +39,11 @@ type SessionStorer interface {
 	ListParticipants(ctx context.Context, sessionID string, f modelSession.ParticipantFilter) ([]modelSession.ParticipantDTO, int64, error)
 	// PrintParticipants returns every participant with the status of their latest attempt.
 	PrintParticipants(ctx context.Context, sessionID string) ([]modelSession.PrintParticipantDTO, error)
+	// CardCandidates returns the participants' user ids with whether they ever signed in
+	// and whether the account is active.
+	CardCandidates(ctx context.Context, sessionID string) ([]CardCandidate, error)
+	// SetCardPasswords stores password hashes (user id → hash) with must_change_password = false.
+	SetCardPasswords(ctx context.Context, hashes map[string]string) error
 	// FindTenant reads the tenant row (name and settings for printed documents).
 	FindTenant(ctx context.Context, id string) (modelTenant.TenantEntity, error)
 	FindParticipant(ctx context.Context, sessionID, userID string) (modelSession.ParticipantEntity, error)
@@ -49,6 +54,18 @@ type SessionStorer interface {
 	MySessions(ctx context.Context, userID string, since time.Time) ([]modelSession.MySessionDTO, error)
 
 	CreateAuditLog(ctx context.Context, log *modelAudit.AuditLogEntity) error
+}
+
+// CardCandidate is a participant who may get a card password.
+type CardCandidate struct {
+	UserID   string
+	SignedIn bool
+	Active   bool
+}
+
+// PasswordHasher hashes passwords (pkg/password; it bounds parallel hashing itself).
+type PasswordHasher interface {
+	Hash(ctx context.Context, pw string) (string, error)
 }
 
 // TxManager runs fn inside a transaction scoped to tenantID.

@@ -147,6 +147,28 @@ type ParticipantDTO struct {
 	AddedAt          time.Time  `json:"added_at"`
 }
 
+// MaxCardPasswords bounds POST /sessions/:id/card-passwords (Argon2 per participant).
+const MaxCardPasswords = 1000
+
+// CardPasswordsInput is the body of POST /api/v1/sessions/:id/card-passwords.
+type CardPasswordsInput struct {
+	// OnlyNew limits the new passwords to participants who never signed in (default true),
+	// so cards already handed out and accounts in use keep working.
+	OnlyNew *bool `json:"only_new"`
+}
+
+// CardPasswordDTO is a password generated for one participant, shown once.
+type CardPasswordDTO struct {
+	UserID   string `json:"user_id"`
+	Password string `json:"password"`
+}
+
+// CardPasswordsDTO answers POST /sessions/:id/card-passwords.
+type CardPasswordsDTO struct {
+	Passwords []CardPasswordDTO `json:"passwords"`
+	Skipped   int               `json:"skipped"` // signed in before (only_new) or suspended
+}
+
 // PrintParticipantDTO is one participant on the printed documents.
 type PrintParticipantDTO struct {
 	UserID        string     `json:"user_id"`

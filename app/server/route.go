@@ -87,7 +87,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, mediaSvc, logger)
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
 	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, logger)
-	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, logger)
+	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, importHasher, logger)
 	reportSvc := report.NewReportService(reportRepo, txManager, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
@@ -248,6 +248,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	sessions.Post("/:id/status", sessionHandler.SetStatus)
 	sessions.Get("/:id/token", sessionHandler.Token)
 	sessions.Get("/:id/print", sessionHandler.Print)
+	sessions.Post("/:id/card-passwords", sessionHandler.CardPasswords)
 	sessions.Post("/:id/token/rotate", sessionHandler.RotateToken)
 	sessions.Put("/:id/proctors", sessionHandler.SetProctors)
 	sessions.Get("/:id/participants", sessionHandler.ListParticipants)
