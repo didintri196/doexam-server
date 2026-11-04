@@ -177,7 +177,7 @@ func TestPlanWordAutoNumbering(t *testing.T) {
 	}
 	// a picture that will not be stored disappears from the HTML
 	b = buildWordItem(pl.items[0], pl, nil, map[string]bool{})
-	if strings.Contains(b.dto.Stem, "<img") {
+	if strings.Contains(b.dto.Stem, "<img") || strings.Contains(b.dto.Stem, "<p></p>") {
 		t.Fatalf("dropped picture still in stem: %q", b.dto.Stem)
 	}
 }

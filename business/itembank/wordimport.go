@@ -85,6 +85,11 @@ func (s *ItemBankService) ImportWord(ctx context.Context, p modelAuth.Principal,
 	out := modelBank.WordImportDTO{Items: []modelBank.WordItemDTO{}, Warnings: append([]string{}, doc.Warnings...), Stimuli: len(plan.stimuli)}
 	out.Warnings = append(out.Warnings, plan.warnings...)
 	pictures := checkPictures(doc, plan, &out)
+	out.Readings = make([]modelBank.WordReadingDTO, 0, len(plan.stimuli))
+	for _, st := range plan.stimuli {
+		body, _ := richtext.Sanitize(dropPictures(strings.Join(st.body, ""), plan, pictures))
+		out.Readings = append(out.Readings, modelBank.WordReadingDTO{Title: st.title, Body: body})
+	}
 	built := make([]builtItem, 0, len(plan.items))
 	for _, it := range plan.items {
 		b := buildWordItem(it, plan, comps, pictures)
@@ -232,14 +237,15 @@ func previewMedia(d *docx.Document, pl *wordPlan, pictures map[string]bool) map[
 	return out
 }
 
-// dropPictures removes pictures that will not be stored from HTML.
+// dropPictures removes pictures that will not be stored from HTML, and the paragraphs
+// they leave empty.
 func dropPictures(html string, pl *wordPlan, pictures map[string]bool) string {
 	for rid, temp := range pl.images {
 		if !pictures[rid] {
 			html = strings.ReplaceAll(html, `<img data-media-id="`+temp+`" alt="">`, "")
 		}
 	}
-	return html
+	return strings.ReplaceAll(html, "<p></p>", "")
 }
 
 // buildWordItem decides the type and the key, then validates with the same rules as the editor.

@@ -37,13 +37,20 @@ type WordItemDTO struct {
 	Warnings    []WordIssue     `json:"warnings"`
 }
 
+// WordReadingDTO is a reading text (stimulus) as read from the document.
+type WordReadingDTO struct {
+	Title string `json:"title"`
+	Body  string `json:"body"` // sanitized HTML
+}
+
 // WordImportDTO is the answer of the import: a preview, or the result of saving.
 type WordImportDTO struct {
-	Items    []WordItemDTO `json:"items"`
-	Valid    int           `json:"valid"`
-	Invalid  int           `json:"invalid"`
-	Stimuli  int           `json:"stimuli"`
-	Warnings []string      `json:"warnings"` // document-wide (unsupported equations, pictures)
+	Items    []WordItemDTO    `json:"items"`
+	Valid    int              `json:"valid"`
+	Invalid  int              `json:"invalid"`
+	Stimuli  int              `json:"stimuli"`
+	Readings []WordReadingDTO `json:"readings"` // in document order; items refer to them by title
+	Warnings []string         `json:"warnings"` // document-wide (unsupported equations, pictures)
 	// Media lets the preview show the document's pictures (data: URLs, preview only).
 	Media map[string]modelMedia.Ref `json:"media,omitempty"`
 	// Saved: items and reading texts created (commit only).
