@@ -61,14 +61,15 @@ type SessionService struct {
 	tx       TxManager
 	attempts AttemptFinalizer
 	links    LinkSigner // card signature image
+	board    *AnnouncementBoard
 	now      func() time.Time
 	tracer   trace.Tracer
 	logger   *slog.Logger
 }
 
 // NewSessionService returns a concrete SessionService.
-func NewSessionService(storer SessionStorer, tx TxManager, attempts AttemptFinalizer, hasher PasswordHasher, links LinkSigner, logger *slog.Logger) *SessionService {
-	return &SessionService{storer: storer, tx: tx, attempts: attempts, hasher: hasher, links: links, now: time.Now, tracer: otel.Tracer("doexam.service.session"), logger: logger}
+func NewSessionService(storer SessionStorer, tx TxManager, attempts AttemptFinalizer, hasher PasswordHasher, links LinkSigner, board *AnnouncementBoard, logger *slog.Logger) *SessionService {
+	return &SessionService{storer: storer, tx: tx, attempts: attempts, hasher: hasher, links: links, board: board, now: time.Now, tracer: otel.Tracer("doexam.service.session"), logger: logger}
 }
 
 // List returns sessions: all for managers, assigned ones for proctors.

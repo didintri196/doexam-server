@@ -86,8 +86,9 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	subjectSvc := subject.NewSubjectService(subjectRepo, txManager, logger)
 	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, mediaSvc, logger)
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
-	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, logger)
-	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, importHasher, mediaSigner, logger)
+	announcementBoard := session.NewAnnouncementBoard(sessionRepo)
+	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, announcementBoard, logger)
+	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, importHasher, mediaSigner, announcementBoard, logger)
 	reportSvc := report.NewReportService(reportRepo, txManager, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
@@ -259,6 +260,13 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	sessions.Patch("/:id/participants/:user_id", sessionHandler.UpdateParticipant)
 	sessions.Delete("/:id/participants/:user_id", sessionHandler.RemoveParticipant)
 	v1.Get("/my/sessions", requireAuth, sessionHandler.MySessions)
+	sessions.Post("/:id/announcements", sessionHandler.Announce)
+	sessions.Get("/:id/announcements", sessionHandler.ListAnnouncements)
+	sessions.Get("/:id/announcements/:aid/recipients", sessionHandler.AnnouncementRecipients)
+	sessions.Post("/:id/announcements/:aid/retract", sessionHandler.RetractAnnouncement)
+	v1.Post("/announcements", requireAuth, sessionHandler.Broadcast)
+	v1.Get("/my/announcements", requireAuth, sessionHandler.MyAnnouncements)
+	v1.Post("/my/announcements/:aid/read", requireAuth, sessionHandler.ReadAnnouncement)
 	sessions.Get("/:id/monitor", attemptHandler.Monitor)
 
 	attempts := v1.Group("/attempts", requireAuth)

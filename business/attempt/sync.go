@@ -105,13 +105,18 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 				out.Duplicates++
 				continue
 			}
-			if err := s.apply(ctx, ev, item, response, now); err != nil {
+			if err := s.apply(ctx, a, ev, item, response, now); err != nil {
 				return err
 			}
 			out.Accepted++
 			maxSeq = max(maxSeq, ev.ClientSeq)
 		}
 		a.LastSeenAt, a.LastEventSeq = &now, maxSeq
+		if s.board != nil {
+			if out.AnnouncementCursor, err = s.board.Cursor(ctx, a.SessionID); err != nil {
+				return err
+			}
+		}
 		return s.storer.UpdateAttempt(ctx, &a)
 	})
 	if err != nil {
@@ -129,6 +134,15 @@ func (s *AttemptService) checkEvent(ev modelAttempt.ClientEvent, a modelAttempt.
 	}
 	if !slices.Contains(modelAttempt.ClientEventTypes, ev.Type) {
 		return "unknown event type", nil
+	}
+	if ev.Type == modelAttempt.EventAnnouncementRead {
+		var body struct {
+			AnnouncementID string `json:"announcement_id"`
+		}
+		if json.Unmarshal(ev.Payload, &body) != nil || uuid.Validate(body.AnnouncementID) != nil {
+			return "payload must be {\"announcement_id\": uuid}", nil
+		}
+		return "", nil // not an answer: accepted even after the deadline
 	}
 	// after the deadline only events recorded (client_ts) before it are accepted; tick has
 	// already closed attempts beyond the grace period
@@ -175,8 +189,21 @@ func (s *AttemptService) checkEvent(ev modelAttempt.ClientEvent, a modelAttempt.
 }
 
 // apply writes the effect of an accepted event.
-func (s *AttemptService) apply(ctx context.Context, ev modelAttempt.ClientEvent, item *ItemRow, response []byte, now time.Time) error {
+func (s *AttemptService) apply(ctx context.Context, a modelAttempt.AttemptEntity, ev modelAttempt.ClientEvent, item *ItemRow, response []byte, now time.Time) error {
 	switch ev.Type {
+	case modelAttempt.EventAnnouncementRead:
+		if s.board == nil {
+			return nil
+		}
+		var body struct {
+			AnnouncementID string `json:"announcement_id"`
+		}
+		_ = json.Unmarshal(ev.Payload, &body) // checked in checkEvent
+		at := now
+		if ev.ClientTS != nil && ev.ClientTS.Before(now) {
+			at = ev.ClientTS.UTC()
+		}
+		return s.board.MarkRead(ctx, strings.ToLower(body.AnnouncementID), a.UserID, at)
 	case modelAttempt.EventResponseSaved:
 		at := now
 		if ev.ClientTS != nil && ev.ClientTS.Before(now) {

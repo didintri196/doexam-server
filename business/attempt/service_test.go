@@ -1,6 +1,7 @@
 package attempt
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -65,6 +66,9 @@ func TestCheckEvent(t *testing.T) {
 	played := func(payload string) modelAttempt.ClientEvent {
 		return modelAttempt.ClientEvent{ClientEventID: "0192a000-0000-7000-8000-000000000001", Type: modelAttempt.EventMediaPlayed, Payload: json.RawMessage(payload)}
 	}
+	read := func(payload string) modelAttempt.ClientEvent {
+		return modelAttempt.ClientEvent{ClientEventID: "0192a000-0000-7000-8000-000000000001", Type: modelAttempt.EventAnnouncementRead, Payload: json.RawMessage(payload)}
+	}
 	svc := &AttemptService{}
 	tests := []struct {
 		name  string
@@ -91,6 +95,9 @@ func TestCheckEvent(t *testing.T) {
 		{"media played no number", played(`{"media_id":"0192a000-0000-7000-8000-0000000000aa"}`), a, free, items, before, "payload must be"},
 		{"media played late", modelAttempt.ClientEvent{ClientEventID: "0192a000-0000-7000-8000-000000000001", Type: modelAttempt.EventMediaPlayed, ClientTS: &after,
 			Payload: json.RawMessage(`{"media_id":"0192a000-0000-7000-8000-0000000000aa","play_no":1}`)}, a, free, items, after, "after_deadline"},
+		{"announcement read", read(`{"announcement_id":"0192a000-0000-7000-8000-0000000000ab"}`), a, free, items, before, ""},
+		{"announcement read after the deadline", read(`{"announcement_id":"0192a000-0000-7000-8000-0000000000ab"}`), a, free, items, after, ""},
+		{"announcement read bad id", read(`{"announcement_id":"x"}`), a, free, items, before, "payload must be"},
 		{"forward only after visiting a later item", ev(modelAttempt.EventResponseSaved, "i1", nil), a, snapshot{Navigation: string(modelExam.NavigationForwardOnly)},
 			[]ItemRow{*i1, {AttemptItemEntity: modelAttempt.AttemptItemEntity{ID: "i2", AttemptSectionID: "s1", Position: 2, VisitCount: 1}}}, before, "forward_only"},
 	}
@@ -156,5 +163,30 @@ func TestPercent(t *testing.T) {
 		if got := percent(tt.raw, tt.max); got != tt.want {
 			t.Errorf("percent(%v,%v) = %v, want %v", tt.raw, tt.max, got, tt.want)
 		}
+	}
+}
+
+// fakeBoard records announcement confirmations.
+type fakeBoard struct{ reads []string }
+
+func (f *fakeBoard) Cursor(context.Context, string) (string, error) { return "c1", nil }
+func (f *fakeBoard) MarkRead(_ context.Context, id, userID string, _ time.Time) error {
+	f.reads = append(f.reads, id+"/"+userID)
+	return nil
+}
+
+func TestApplyAnnouncementRead(t *testing.T) {
+	board := &fakeBoard{}
+	svc := &AttemptService{board: board}
+	ev := modelAttempt.ClientEvent{Type: modelAttempt.EventAnnouncementRead, Payload: json.RawMessage(`{"announcement_id":"0192A000-0000-7000-8000-0000000000AB"}`)}
+	if err := svc.apply(context.Background(), modelAttempt.AttemptEntity{UserID: "u1"}, ev, nil, nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(board.reads) != 1 || board.reads[0] != "0192a000-0000-7000-8000-0000000000ab/u1" {
+		t.Fatalf("reads = %v", board.reads)
+	}
+	// without a board (tests, old wiring) the event is only recorded
+	if err := (&AttemptService{}).apply(context.Background(), modelAttempt.AttemptEntity{}, ev, nil, nil, time.Now()); err != nil {
+		t.Fatal(err)
 	}
 }

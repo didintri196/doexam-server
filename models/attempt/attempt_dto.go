@@ -48,6 +48,9 @@ type SyncDTO struct {
 	Status     Status     `json:"status"`
 	DeadlineAt time.Time  `json:"deadline_at"`
 	ServerTime time.Time  `json:"server_time"`
+	// AnnouncementCursor changes whenever an announcement of the session is sent or
+	// retracted; the client then reloads GET /my/announcements ("" = none).
+	AnnouncementCursor string `json:"announcement_cursor"`
 }
 
 // ExtendInput is the body of POST /api/v1/attempts/:id/extend.
@@ -107,6 +110,7 @@ type SectionView struct {
 // AttemptView is the exam as the participant takes it.
 type AttemptView struct {
 	ID              string          `json:"id"`
+	SessionID       string          `json:"session_id"`
 	ExamTitle       string          `json:"exam_title"`
 	Instructions    *string         `json:"instructions"`
 	Status          Status          `json:"status"`

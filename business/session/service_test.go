@@ -167,7 +167,7 @@ func newFixture(status modelSession.Status) (*SessionService, *fakeStore) {
 		participants: map[string]modelSession.ParticipantEntity{}, attempts: map[string]int64{},
 		activeUsers: []string{u1, u2, u3},
 	}
-	svc := NewSessionService(store, fakeTx{}, &fakeFinalizer{}, fakeHasher{}, fakeSigner{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := NewSessionService(store, fakeTx{}, &fakeFinalizer{}, fakeHasher{}, fakeSigner{}, NewAnnouncementBoard(nil), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	svc.now = func() time.Time { return now.Add(10 * time.Minute) }
 	return svc, store
 }
@@ -420,7 +420,7 @@ func TestGenerateCardPasswords(t *testing.T) {
 		{UserID: "u-used", Active: true, SignedIn: true},
 		{UserID: "u-off", Active: false},
 	}}
-	svc := NewSessionService(store, fakeTx{}, &fakeFinalizer{}, fakeHasher{}, fakeSigner{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := NewSessionService(store, fakeTx{}, &fakeFinalizer{}, fakeHasher{}, fakeSigner{}, NewAnnouncementBoard(nil), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()
 	admin := modelAuth.Principal{TenantID: tenantID, UserID: "admin", Permissions: []string{modelAuth.PermSessionManage, modelAuth.PermUserManage}}
 
