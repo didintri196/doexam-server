@@ -22,7 +22,7 @@ func NewMediaHandler(mediaSvc *media.MediaService) *MediaHandler {
 	return &MediaHandler{mediaSvc: mediaSvc}
 }
 
-// Upload handles POST /api/v1/media (multipart field "file").
+// Upload handles POST /api/v1/media (multipart field "file": image or audio).
 func (h *MediaHandler) Upload(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
 
@@ -36,7 +36,7 @@ func (h *MediaHandler) Upload(c *fiber.Ctx) error {
 	}
 	defer f.Close()
 	// read one byte past the limit so the service can reject oversized files
-	data, err := io.ReadAll(io.LimitReader(f, modelMedia.MaxImageBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, modelMedia.MaxUploadBytes+1))
 	if err != nil {
 		return handleError(c, logger, "failed to read upload", err)
 	}

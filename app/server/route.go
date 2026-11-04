@@ -263,6 +263,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	attempts.Get("/:id/result", attemptHandler.Result)
 	attempts.Post("/:id/extend", attemptHandler.Extend)
 	attempts.Post("/:id/lock", attemptHandler.Lock)
+	attempts.Post("/:id/grant-plays", attemptHandler.GrantPlays)
 	attempts.Post("/:id/unlock", attemptHandler.Unlock)
 	attempts.Post("/:id/reset-device", attemptHandler.ResetDevice)
 	attempts.Post("/:id/force-submit", attemptHandler.ForceSubmit)

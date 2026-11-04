@@ -174,3 +174,45 @@ func TestLinks(t *testing.T) {
 		t.Fatalf("participant links: err = %v", err)
 	}
 }
+
+func TestUploadAudio(t *testing.T) {
+	svc, _, _ := newSvc()
+	ctx := context.Background()
+	pad := func(b []byte) []byte { return append(b, make([]byte, 64)...) }
+	mp4 := func(brand string) []byte {
+		b := []byte{0, 0, 0, 24, 'f', 't', 'y', 'p'}
+		b = append(b, brand...)
+		b = append(b, 0, 0, 0, 0)
+		b = append(b, "mp42isom"...)
+		return pad(b)
+	}
+	ok := []struct {
+		name, file, mime string
+		data             []byte
+	}{
+		{"mp3 with ID3", "a.mp3", "audio/mpeg", pad([]byte("ID3\x03\x00\x00\x00\x00\x00\x00"))},
+		{"mp3 frame", "a.mp3", "audio/mpeg", pad([]byte{0xFF, 0xFB, 0x90, 0x64})},
+		{"ogg", "a.ogg", "audio/ogg", pad([]byte("OggS\x00\x02\x00\x00"))},
+		{"wav", "a.wav", "audio/wav", pad([]byte("RIFF\x24\x00\x00\x00WAVEfmt "))},
+		{"m4a", "listening.m4a", "audio/mp4", mp4("M4A ")},
+	}
+	for _, tc := range ok {
+		dto, err := svc.Upload(ctx, author, tc.file, tc.data, modelAudit.Client{})
+		if err != nil || dto.MimeType != tc.mime || dto.Width != nil {
+			t.Errorf("%s: dto = %+v err = %v", tc.name, dto, err)
+		}
+	}
+	bad := map[string]struct {
+		file string
+		data []byte
+	}{
+		"mp4 video":       {"clip.mp4", mp4("isom")},
+		"audio too large": {"a.mp3", append([]byte("ID3\x03"), make([]byte, modelMedia.MaxAudioBytes)...)},
+	}
+	for name, tc := range bad {
+		var ve *errr.ValidationError
+		if _, err := svc.Upload(ctx, author, tc.file, tc.data, modelAudit.Client{}); !errors.As(err, &ve) || ve.Fields["file"] == "" {
+			t.Errorf("%s: err = %v, want file error", name, err)
+		}
+	}
+}

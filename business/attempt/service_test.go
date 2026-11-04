@@ -62,6 +62,9 @@ func TestCheckEvent(t *testing.T) {
 	ev := func(typ, item string, ts *time.Time) modelAttempt.ClientEvent {
 		return modelAttempt.ClientEvent{ClientEventID: "0192a000-0000-7000-8000-000000000001", Type: typ, AttemptItemID: item, ClientTS: ts}
 	}
+	played := func(payload string) modelAttempt.ClientEvent {
+		return modelAttempt.ClientEvent{ClientEventID: "0192a000-0000-7000-8000-000000000001", Type: modelAttempt.EventMediaPlayed, Payload: json.RawMessage(payload)}
+	}
 	svc := &AttemptService{}
 	tests := []struct {
 		name  string
@@ -82,6 +85,12 @@ func TestCheckEvent(t *testing.T) {
 		{"late and recorded late", ev(modelAttempt.EventResponseSaved, "i1", &after), a, free, items, after, "after_deadline"},
 		{"locked answer", ev(modelAttempt.EventResponseSaved, "i1", nil), modelAttempt.AttemptEntity{Status: modelAttempt.StatusLocked, DeadlineAt: deadline}, free, items, before, "locked"},
 		{"locked telemetry ok", ev(modelAttempt.EventFocusLost, "", nil), modelAttempt.AttemptEntity{Status: modelAttempt.StatusLocked, DeadlineAt: deadline}, free, items, before, ""},
+		{"media played", played(`{"media_id":"0192a000-0000-7000-8000-0000000000aa","play_no":2}`), a, free, items, before, ""},
+		{"media played while locked", played(`{"media_id":"0192a000-0000-7000-8000-0000000000aa","play_no":1}`), modelAttempt.AttemptEntity{Status: modelAttempt.StatusLocked, DeadlineAt: deadline}, free, items, before, ""},
+		{"media played bad id", played(`{"media_id":"x","play_no":1}`), a, free, items, before, "payload must be"},
+		{"media played no number", played(`{"media_id":"0192a000-0000-7000-8000-0000000000aa"}`), a, free, items, before, "payload must be"},
+		{"media played late", modelAttempt.ClientEvent{ClientEventID: "0192a000-0000-7000-8000-000000000001", Type: modelAttempt.EventMediaPlayed, ClientTS: &after,
+			Payload: json.RawMessage(`{"media_id":"0192a000-0000-7000-8000-0000000000aa","play_no":1}`)}, a, free, items, after, "after_deadline"},
 		{"forward only after visiting a later item", ev(modelAttempt.EventResponseSaved, "i1", nil), a, snapshot{Navigation: string(modelExam.NavigationForwardOnly)},
 			[]ItemRow{*i1, {AttemptItemEntity: modelAttempt.AttemptItemEntity{ID: "i2", AttemptSectionID: "s1", Position: 2, VisitCount: 1}}}, before, "forward_only"},
 	}

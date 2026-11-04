@@ -59,9 +59,9 @@ func NewMediaService(storer MediaStorer, tx TxManager, files FileStore, signer S
 	}
 }
 
-// Upload stores an image (PNG, JPEG, GIF or WebP, at most MaxImageBytes). The same
-// content uploaded again returns the existing file. data may be one byte over the limit
-// so oversized uploads can be told apart.
+// Upload stores an image (PNG, JPEG, GIF or WebP, ≤ MaxImageBytes) or an audio clip
+// (MP3, M4A, Ogg or WAV, ≤ MaxAudioBytes). The same content uploaded again returns the
+// existing file. data may be one byte over the limit so oversized uploads can be told apart.
 func (s *MediaService) Upload(ctx context.Context, p modelAuth.Principal, filename string, data []byte, client modelAudit.Client) (modelMedia.MediaDTO, error) {
 	ctx, span := s.tracer.Start(ctx, "MediaService.Upload")
 	defer span.End()
@@ -69,7 +69,7 @@ func (s *MediaService) Upload(ctx context.Context, p modelAuth.Principal, filena
 	if !slices.ContainsFunc(uploadPerms, p.Has) {
 		return modelMedia.MediaDTO{}, fail(span, errr.ErrForbidden)
 	}
-	mime, ext, w, h, err := checkImage(data)
+	mime, ext, w, h, err := checkUpload(filename, data)
 	if err != nil {
 		return modelMedia.MediaDTO{}, fail(span, err)
 	}
@@ -194,18 +194,53 @@ func (s *MediaService) toDTO(f modelMedia.MediaFileEntity) modelMedia.MediaDTO {
 	}
 }
 
-// checkImage sniffs the type from the content (never the file name) and reads the size.
-func checkImage(data []byte) (mime, ext string, w, h *int, err error) {
+// checkUpload sniffs the type from the content (the file name only tells M4A from MP4
+// video) and, for images, reads the size.
+func checkUpload(filename string, data []byte) (mime, ext string, w, h *int, err error) {
 	if len(data) == 0 {
 		return "", "", nil, nil, fileErr("required")
 	}
+	if mime := sniffAudio(filename, data); mime != "" {
+		if len(data) > modelMedia.MaxAudioBytes {
+			return "", "", nil, nil, fileErr("max 20 MB")
+		}
+		return mime, modelMedia.AudioTypes[mime], nil, nil, nil
+	}
+	return checkImage(data)
+}
+
+// sniffAudio returns the audio type of data, or "" when it is not accepted audio.
+func sniffAudio(filename string, data []byte) string {
+	switch http.DetectContentType(data) {
+	case "audio/mpeg":
+		return "audio/mpeg" // MP3 with an ID3 tag
+	case "application/ogg":
+		return "audio/ogg"
+	case "audio/wave":
+		return "audio/wav"
+	case "video/mp4", "audio/mp4":
+		// the MP4 container holds audio (.m4a) as well as video; only audio is accepted
+		if n := strings.ToLower(filename); strings.HasSuffix(n, ".m4a") || strings.HasSuffix(n, ".aac") {
+			return "audio/mp4"
+		}
+		return ""
+	}
+	// MP3 without ID3: an MPEG audio frame starts with 11 set sync bits, layer III
+	if len(data) > 2 && data[0] == 0xFF && data[1]&0xE6 == 0xE2 {
+		return "audio/mpeg"
+	}
+	return ""
+}
+
+// checkImage sniffs an image type from the content and reads the size.
+func checkImage(data []byte) (mime, ext string, w, h *int, err error) {
 	if len(data) > modelMedia.MaxImageBytes {
 		return "", "", nil, nil, fileErr("max 5 MB")
 	}
 	mime = http.DetectContentType(data)
 	ext, ok := modelMedia.ImageTypes[mime]
 	if !ok {
-		return "", "", nil, nil, fileErr("must be a PNG, JPEG, GIF or WebP image")
+		return "", "", nil, nil, fileErr("must be a PNG, JPEG, GIF or WebP image, or MP3, M4A, Ogg or WAV audio")
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {

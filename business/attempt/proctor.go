@@ -98,6 +98,19 @@ func (s *AttemptService) Extend(ctx context.Context, p modelAuth.Principal, id s
 	})
 }
 
+// GrantPlays lets a participant play every limited audio clip `plays` more times
+// (e.g. the speaker failed). Clips without a limit are unaffected.
+func (s *AttemptService) GrantPlays(ctx context.Context, p modelAuth.Principal, id string, in modelAttempt.GrantPlaysInput, client modelAudit.Client) (modelAttempt.AttemptView, error) {
+	v := errr.Validation{}
+	v.Check(in.Plays >= 1 && in.Plays <= 5, "plays", "1-5")
+	if err := v.Err(); err != nil {
+		return modelAttempt.AttemptView{}, err
+	}
+	return s.proctorAction(ctx, p, id, "AttemptService.GrantPlays", client, func(ctx context.Context, a *modelAttempt.AttemptEntity, _ SessionInfo) error {
+		return s.event(ctx, *a, modelAttempt.EventMediaPlaysGranted, &p.UserID, map[string]int{"plays": in.Plays}, client)
+	})
+}
+
 // Lock stops a participant from answering (the timer keeps running).
 func (s *AttemptService) Lock(ctx context.Context, p modelAuth.Principal, id string, client modelAudit.Client) (modelAttempt.AttemptView, error) {
 	return s.proctorAction(ctx, p, id, "AttemptService.Lock", client, func(ctx context.Context, a *modelAttempt.AttemptEntity, _ SessionInfo) error {

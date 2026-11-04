@@ -119,6 +119,17 @@ func (h *AttemptHandler) Extend(c *fiber.Ctx) error {
 	})
 }
 
+// GrantPlays handles POST /api/v1/attempts/:id/grant-plays {plays}.
+func (h *AttemptHandler) GrantPlays(c *fiber.Ctx) error {
+	var in modelAttempt.GrantPlaysInput
+	if err := c.BodyParser(&in); err != nil {
+		return badBody(c)
+	}
+	return h.view(c, "plays granted", "failed to grant plays", func(ctx context.Context, p modelAuth.Principal, cl modelAudit.Client) (modelAttempt.AttemptView, error) {
+		return h.attemptSvc.GrantPlays(ctx, p, c.Params("id"), in, cl)
+	})
+}
+
 // Lock handles POST /api/v1/attempts/:id/lock.
 func (h *AttemptHandler) Lock(c *fiber.Ctx) error {
 	return h.view(c, "attempt locked", "failed to lock attempt", func(ctx context.Context, p modelAuth.Principal, cl modelAudit.Client) (modelAttempt.AttemptView, error) {

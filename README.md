@@ -69,7 +69,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | POST | `/api/v1/auth/login` | Login `{username, password}` → token sesi. `tenant` (slug) hanya wajib bila instalasi melayani lebih dari satu institusi |
 | GET | `/api/v1/public/tenant` | Tanpa login, untuk layar login & header klien: nama, `tagline`, preset, locale, warna, `logo_url`. Query `tenant` opsional (wajib bila > 1 institusi). 404 `setup not completed` sebelum setup |
 | GET | `/api/v1/public/tenant/logo` | Tanpa login: file logo (PNG/JPEG/WebP), dengan `ETag` + cache 1 hari. Query `tenant` opsional |
-| POST | `/api/v1/media` 🔒 `item.write` | Unggah gambar soal (multipart `file`; PNG/JPEG/GIF/WebP ≤5 MB, jenis dibaca dari isi; SVG ditolak). File sama → id lama. → `{id, mime_type, size_bytes, width, height, url}`. Sisipkan di HTML sebagai `<img data-media-id="…">` |
+| POST | `/api/v1/media` 🔒 `item.write` | Unggah gambar (PNG/JPEG/GIF/WebP ≤5 MB) atau audio (MP3/M4A/Ogg/WAV ≤20 MB) soal (multipart `file`; jenis dibaca dari isi; SVG dan video ditolak). File sama → id lama. → `{id, mime_type, size_bytes, width, height, url}`. Sisipkan di HTML sebagai `<img data-media-id="…">` |
 | POST | `/api/v1/media/links` 🔒 `item.read`/`item.write`/`exam.read`/`grade.write`/`report.read` | `{ids[≤500]}` → `{<id>: {url, mime, w, h}}`, link bertanda tangan untuk media di konten yang sedang dibuka. Id tak dikenal dilewati |
 | GET | `/api/v1/media/:id?t&e&s` | Tanpa login: isi file lewat link bertanda tangan (HMAC tenant+file+kedaluwarsa, ≥12 jam, berganti per jam). Link salah/kedaluwarsa → 404. `Cache-Control: private, immutable` |
 | GET | `/api/v1/auth/me` 🔒 | Profil, tenant, peran, dan izin pengguna yang login |
@@ -131,7 +131,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | PATCH/DELETE | `/api/v1/sessions/:id/participants/:user_id` 🔒 | Kehadiran, kursi, catatan (proktor) & `extra_time_minutes` (manager) / keluarkan (belum mulai) |
 | GET | `/api/v1/my/sessions` 🔒 | Sesi milik peserta yang login (tanpa token) |
 | POST | `/api/v1/attempts` 🔒 `attempt.take` | Mulai / lanjutkan ujian `{session_id, token}` + header `X-Device-ID` → soal tanpa kunci |
-| GET | `/api/v1/attempts/:id` 🔒 | Tampilan ujian peserta (status, batas waktu, `server_time`, section & soal aktif, jawaban tersimpan) |
+| GET | `/api/v1/attempts/:id` 🔒 | Tampilan ujian peserta (status, batas waktu, `server_time`, section & soal aktif, jawaban tersimpan, `media` = link bertanda tangan, `media_plays` = putaran audio tercatat per media, `extra_plays` = tambahan dari proktor) |
 | POST | `/api/v1/attempts/:id/events` 🔒 | Sinkron batch event (≤200) — idempoten, aman dikirim ulang |
 | POST | `/api/v1/attempts/:id/sections/:section_id/finish` 🔒 | Selesaikan section (mode berurutan → section berikutnya mulai) |
 | POST | `/api/v1/attempts/:id/submit` 🔒 | Kumpulkan & nilai otomatis |
@@ -139,6 +139,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET | `/api/v1/my/attempts` 🔒 | Riwayat ujian peserta |
 | GET | `/api/v1/sessions/:id/monitor` 🔒 | Dashboard proktor: status, terjawab, batas waktu, terakhir aktif, pelanggaran tiap peserta |
 | POST | `/api/v1/attempts/:id/extend` · `/lock` · `/unlock` · `/reset-device` · `/force-submit` 🔒 | Aksi proktor (proktor sesi atau `session.manage`) |
+| POST | `/api/v1/attempts/:id/grant-plays` 🔒 | Aksi proktor: `{plays: 1-5}` tambahan putar untuk setiap audio berbatas (mis. speaker rusak). Dicatat sebagai event `MEDIA_PLAYS_GRANTED` |
 | GET | `/api/v1/exams/:id/grading/summary` 🔒 | Soal esai ujian + jumlah menunggu/sudah dinilai |
 | GET | `/api/v1/exams/:id/grading` 🔒 | Antrean koreksi esai. Query: `item_version_id`, `status` (pending\|graded\|all), `blind`, `page` |
 | GET/POST | `/api/v1/grading/items/:id` 🔒 | Detail jawaban (soal, rubrik, model jawaban, riwayat) / beri nilai `{score}` atau `{rubric_scores:[{criterion, score}]}` + `comment` |
@@ -175,7 +176,7 @@ Tipe lain: `mcq_multi` (`answer_key.correct: ["a","c"]`, `scoring.method: all_or
 
 Ujian: semua perubahan struktur menjawab dengan **ujian lengkap terbaru** (editor bisa langsung render ulang). `available` pada aturan = jumlah soal aktif yang cocok sekarang (draft) atau ukuran snapshot (terbit). Kompetensi pada aturan mencakup sub-kompetensinya.
 
-**Event dari exam client** (`POST /attempts/:id/events`): tiap event `{client_event_id (UUID), client_seq, type, attempt_item_id?, payload, client_ts}`. Tipe: `RESPONSE_SAVED` `{"response": {...}|null}`, `FLAG_SET` `{"flagged": true}`, `ITEM_VIEWED` `{"time_spent_ms": 3000}`, `FOCUS_LOST`, `FOCUS_RETURNED`, `FULLSCREEN_EXIT`. Bentuk jawaban: `{"selected":"o2"}`, `{"selected":["a","c"]}`, `{"value":true}`, `{"text":"..."}`. Event ditolak per baris dengan alasan (`locked`, `section_closed`, `forward_only`, `after_deadline`, `attempt_closed`, ...), sisanya tetap diterapkan.
+**Event dari exam client** (`POST /attempts/:id/events`): tiap event `{client_event_id (UUID), client_seq, type, attempt_item_id?, payload, client_ts}`. Tipe: `RESPONSE_SAVED` `{"response": {...}|null}`, `FLAG_SET` `{"flagged": true}`, `ITEM_VIEWED` `{"time_spent_ms": 3000}`, `FOCUS_LOST`, `FOCUS_RETURNED`, `FULLSCREEN_EXIT`, `MEDIA_PLAYED` `{"media_id": "…", "play_no": 1}` (audio mulai diputar; tetap dicatat walau melewati batas, supaya proktor melihatnya). Bentuk jawaban: `{"selected":"o2"}`, `{"selected":["a","c"]}`, `{"value":true}`, `{"text":"..."}`. Event ditolak per baris dengan alasan (`locked`, `section_closed`, `forward_only`, `after_deadline`, `attempt_closed`, ...), sisanya tetap diterapkan.
 
 Menilai & regrade butuh `grade.write`, `tenant.manage`, atau menjadi pembuat ujian. Hasil peserta berstatus `graded` setelah semua esai dinilai (atau dianulir).
 

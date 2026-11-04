@@ -103,6 +103,12 @@ func (s *AttemptService) view(ctx context.Context, a modelAttempt.AttemptEntity)
 	if out.Media, err = s.mediaRefs(ctx, a.TenantID, html...); err != nil {
 		return modelAttempt.AttemptView{}, err
 	}
+	out.MediaPlays = map[string]int{}
+	if running && len(out.Media) > 0 {
+		if out.MediaPlays, out.ExtraPlays, err = s.storer.MediaPlays(ctx, a.ID); err != nil {
+			return modelAttempt.AttemptView{}, err
+		}
+	}
 	return out, nil
 }
 
