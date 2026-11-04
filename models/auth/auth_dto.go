@@ -87,7 +87,7 @@ func ToMeDTO(u UserEntity, t TenantSummaryDTO, roles []RoleEntity) MeDTO {
 	}
 }
 
-// usernamePattern: letters, digits and . _ @ - (NIS/NISN and e-mail style usernames fit).
+// usernamePattern: letters, digits and . _ @ - (numeric IDs and e-mail style usernames fit).
 var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9._@-]{3,100}$`)
 
 // ValidUsername reports whether u is an acceptable username.

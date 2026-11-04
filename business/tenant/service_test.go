@@ -161,8 +161,9 @@ func TestSetup(t *testing.T) {
 		}
 		names[r.Code] = r.Name
 	}
-	if names[modelAuth.RoleParticipant] != "Siswa" {
-		t.Fatalf("school preset participant name = %q, want Siswa", names[modelAuth.RoleParticipant])
+	// Role names are neutral for every preset, including "school".
+	if names[modelAuth.RoleParticipant] != "Peserta" || names[modelAuth.RoleAuthor] != "Penyusun Soal" {
+		t.Fatalf("role names = %v, want neutral Peserta / Penyusun Soal", names)
 	}
 	if *store.users[0].PasswordHash != "hash:rahasia123" {
 		t.Fatal("admin password must be hashed")

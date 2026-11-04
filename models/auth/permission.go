@@ -35,20 +35,12 @@ type SystemRole struct {
 	Permissions []string
 }
 
-// SystemRoles returns the built-in roles for a tenant preset ("school", "company", "custom").
-// Only the display names depend on the preset; codes and permissions never do.
-func SystemRoles(preset string) []SystemRole {
+// SystemRoles returns the built-in roles of a new tenant. Display names are neutral
+// (no school or company wording) for every preset; admins may rename roles afterwards.
+func SystemRoles() []SystemRole {
 	names := map[string]string{
 		RoleAdmin: "Administrator", RoleAuthor: "Penyusun Soal", RoleProctor: "Pengawas",
 		RoleGrader: "Penilai", RoleParticipant: "Peserta",
-	}
-	switch preset {
-	case "school":
-		names[RoleAuthor] = "Guru"
-		names[RoleParticipant] = "Siswa"
-	case "company":
-		names[RoleAuthor] = "Penyusun Tes"
-		names[RoleParticipant] = "Kandidat"
 	}
 
 	return []SystemRole{

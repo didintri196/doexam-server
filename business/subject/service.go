@@ -27,7 +27,7 @@ var (
 	writePerms = []string{modelAuth.PermItemWrite}
 )
 
-// SubjectService manages subjects (mapel / test domains) and their competency trees.
+// SubjectService manages subjects (test domains) and their competency trees.
 // Reading needs item.read or exam.read; changes need item.write.
 type SubjectService struct {
 	storer SubjectStorer

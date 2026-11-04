@@ -22,7 +22,7 @@ type Template struct {
 }
 
 // WriteTemplate writes an .xlsx with a "Data" sheet (headers + examples, every
-// cell formatted as text so leading zeros such as NIS survive) and a "Petunjuk" sheet.
+// cell formatted as text so leading zeros in IDs survive) and a "Petunjuk" sheet.
 func WriteTemplate(w io.Writer, t Template) error {
 	f := excelize.NewFile()
 	defer f.Close()

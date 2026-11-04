@@ -78,7 +78,7 @@ func (s *TenantService) setup(ctx context.Context, in modelTenant.SetupInput) (m
 	}
 	var roles []modelAuth.RoleEntity
 	var adminRoleID string
-	for _, sr := range modelAuth.SystemRoles(string(in.Preset)) {
+	for _, sr := range modelAuth.SystemRoles() {
 		r := modelAuth.RoleEntity{
 			ID: newID(), TenantID: tenant.ID, Code: sr.Code, Name: sr.Name,
 			Permissions: sr.Permissions, IsSystem: true,

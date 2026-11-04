@@ -36,7 +36,7 @@ func (in *SetupInput) Normalize() {
 		}
 	}
 	if in.Preset == "" {
-		in.Preset = PresetSchool
+		in.Preset = PresetCustom
 	}
 	if in.TenantSlug == "" {
 		in.TenantSlug = SlugFromName(in.TenantName)
@@ -76,12 +76,13 @@ type UpdateInput struct {
 	Timezone     *string `json:"timezone"`
 	Locale       *string `json:"locale"`
 	PrimaryColor *string `json:"primary_color"`
+	Tagline      *string `json:"tagline"`
 	Letterhead   *string `json:"letterhead"`
 }
 
 // Normalize trims every field.
 func (in *UpdateInput) Normalize() {
-	for _, f := range []*string{in.Name, in.Timezone, in.Locale, in.PrimaryColor, in.Letterhead} {
+	for _, f := range []*string{in.Name, in.Timezone, in.Locale, in.PrimaryColor, in.Tagline, in.Letterhead} {
 		if f != nil {
 			*f = strings.TrimSpace(*f)
 		}
@@ -106,6 +107,7 @@ type SettingsDTO struct {
 	Timezone     string  `json:"timezone"`
 	Locale       string  `json:"locale"`
 	PrimaryColor *string `json:"primary_color"`
+	Tagline      string  `json:"tagline"`
 	Letterhead   string  `json:"letterhead"`
 	LogoURL      *string `json:"logo_url"`
 }
@@ -114,6 +116,7 @@ type SettingsDTO struct {
 type PublicTenantDTO struct {
 	Slug         string  `json:"slug"`
 	Name         string  `json:"name"`
+	Tagline      string  `json:"tagline"`
 	Preset       Preset  `json:"preset"`
 	Locale       string  `json:"locale"`
 	PrimaryColor *string `json:"primary_color"`
@@ -143,7 +146,7 @@ func ToDTO(e TenantEntity) TenantDTO {
 		ID: e.ID, Slug: e.Slug, Name: e.Name, Preset: e.Preset, IsActive: e.IsActive,
 		Settings: SettingsDTO{
 			Timezone: orDefault(s.Timezone, DefaultTimezone), Locale: orDefault(s.Locale, DefaultLocale),
-			PrimaryColor: nonEmpty(s.PrimaryColor), Letterhead: s.Letterhead, LogoURL: LogoURL(e.Slug, s.LogoFileID),
+			PrimaryColor: nonEmpty(s.PrimaryColor), Tagline: s.Tagline, Letterhead: s.Letterhead, LogoURL: LogoURL(e.Slug, s.LogoFileID),
 		},
 	}
 }
@@ -152,7 +155,7 @@ func ToDTO(e TenantEntity) TenantDTO {
 func ToPublicDTO(e TenantEntity) PublicTenantDTO {
 	s := DecodeSettings(e.Settings)
 	return PublicTenantDTO{
-		Slug: e.Slug, Name: e.Name, Preset: e.Preset, Locale: orDefault(s.Locale, DefaultLocale),
+		Slug: e.Slug, Name: e.Name, Tagline: s.Tagline, Preset: e.Preset, Locale: orDefault(s.Locale, DefaultLocale),
 		PrimaryColor: nonEmpty(s.PrimaryColor), LogoURL: LogoURL(e.Slug, s.LogoFileID),
 	}
 }
