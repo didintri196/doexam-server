@@ -11,6 +11,7 @@ const (
 	ActionTenantSetup    = "tenant.setup"
 	ActionTenantUpdate   = "tenant.update"
 	ActionTenantLogo     = "tenant.logo"
+	ActionTenantCardSign = "tenant.card_signature"
 	ActionLogin          = "auth.login"
 	ActionLoginFailed    = "auth.login_failed"
 	ActionLogout         = "auth.logout"

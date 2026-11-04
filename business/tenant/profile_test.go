@@ -91,6 +91,8 @@ func TestUpdateRejected(t *testing.T) {
 		{name: "bad color", p: adminP, in: modelTenant.UpdateInput{PrimaryColor: ptr("blue")}, wantErr: errr.ErrInvalidInput, wantField: "primary_color"},
 		{name: "long tagline", p: adminP, in: modelTenant.UpdateInput{Tagline: ptr(strings.Repeat("é", 101))}, wantErr: errr.ErrInvalidInput, wantField: "tagline"},
 		{name: "long letterhead", p: adminP, in: modelTenant.UpdateInput{Letterhead: ptr(strings.Repeat("é", 501))}, wantErr: errr.ErrInvalidInput, wantField: "letterhead"},
+		{name: "long card title", p: adminP, in: modelTenant.UpdateInput{Card: &modelTenant.CardInput{Title: strings.Repeat("é", 61)}}, wantErr: errr.ErrInvalidInput, wantField: "card.title"},
+		{name: "long card note", p: adminP, in: modelTenant.UpdateInput{Card: &modelTenant.CardInput{Note: strings.Repeat("a", 301)}}, wantErr: errr.ErrInvalidInput, wantField: "card.note"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -154,6 +156,70 @@ func TestLogo(t *testing.T) {
 	// removing again is a no-op
 	if _, err := svc.RemoveLogo(ctx, adminP, noClient); err != nil || len(store.audits) != 2 {
 		t.Fatalf("second removal: %v, audits %d", err, len(store.audits))
+	}
+}
+
+func TestUpdateCard(t *testing.T) {
+	svc, store, _ := profileFixture()
+	ctx := context.Background()
+
+	// a new tenant gets the defaults: everything shown, default title and label
+	dto, err := svc.Current(ctx, adminP)
+	if err != nil {
+		t.Fatalf("current: %v", err)
+	}
+	if c := dto.Settings.Card; c.Title != modelTenant.DefaultCardTitle || c.IDLabel != modelTenant.DefaultCardIDLabel ||
+		!c.ShowExternalID || !c.ShowExam || !c.ShowSession || !c.ShowSeat || !c.ShowSchedule || !c.ShowQR || c.SignatureURL != nil {
+		t.Fatalf("default card = %+v", c)
+	}
+
+	dto, err = svc.Update(ctx, adminP, modelTenant.UpdateInput{Card: &modelTenant.CardInput{
+		Title: " Kartu Peserta Seleksi ", IDLabel: "No. pendaftaran", Note: "Bawa KTP.",
+		SignerTitle: "Ketua Panitia", SignerName: "Budi Santoso", SignerNumber: "NIP. 1980",
+		ShowExternalID: true, ShowExam: true, ShowSession: true, ShowSchedule: true, // seat and QR hidden
+	}}, noClient)
+	if err != nil {
+		t.Fatalf("update card: %v", err)
+	}
+	c := dto.Settings.Card
+	if c.Title != "Kartu Peserta Seleksi" || c.IDLabel != "No. pendaftaran" || c.Note != "Bawa KTP." || c.SignerName != "Budi Santoso" ||
+		c.ShowSeat || c.ShowQR || !c.ShowExam {
+		t.Fatalf("card = %+v", c)
+	}
+	if len(store.audits) != 1 || store.audits[0].Action != modelAudit.ActionTenantUpdate {
+		t.Fatalf("audits = %+v", store.audits)
+	}
+
+	// the signature image survives a card update and is only reachable through a signed link
+	dto, err = svc.SetCardSignature(ctx, adminP, "ttd.png", pngLogo, noClient)
+	if err != nil {
+		t.Fatalf("set signature: %v", err)
+	}
+	m := store.media[0]
+	if !strings.Contains(m.StorageKey, "/branding/card-signature-") {
+		t.Fatalf("storage key = %s", m.StorageKey)
+	}
+	want := "/api/v1/media/" + m.ID + "?t=" + profileTenantID + "&s=sig"
+	if dto.Settings.Card.SignatureURL == nil || *dto.Settings.Card.SignatureURL != want || dto.Settings.LogoURL != nil {
+		t.Fatalf("signature_url = %v, logo_url = %v", dto.Settings.Card.SignatureURL, dto.Settings.LogoURL)
+	}
+	if store.audits[1].Action != modelAudit.ActionTenantCardSign {
+		t.Fatalf("audit = %s", store.audits[1].Action)
+	}
+	dto, err = svc.Update(ctx, adminP, modelTenant.UpdateInput{Card: &modelTenant.CardInput{Title: modelTenant.DefaultCardTitle}}, noClient)
+	if err != nil || dto.Settings.Card.SignatureURL == nil || dto.Settings.Card.SignerName != "" || dto.Settings.Card.ShowExam {
+		t.Fatalf("card after replace = %+v, %v", dto.Settings.Card, err)
+	}
+	if st := modelTenant.DecodeSettings(store.tenants[0].Settings); st.Card.Title != "" {
+		t.Fatalf("default title must be stored as unset, got %q", st.Card.Title)
+	}
+
+	dto, err = svc.RemoveCardSignature(ctx, adminP, noClient)
+	if err != nil || dto.Settings.Card.SignatureURL != nil {
+		t.Fatalf("remove signature: %+v, %v", dto.Settings.Card, err)
+	}
+	if _, err := svc.SetCardSignature(ctx, authorP, "ttd.png", pngLogo, noClient); !errors.Is(err, errr.ErrForbidden) {
+		t.Fatalf("signature without permission: err = %v", err)
 	}
 }
 

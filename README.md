@@ -77,9 +77,11 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | POST | `/api/v1/auth/logout` 🔒 | Cabut sesi saat ini |
 | POST | `/api/v1/auth/change-password` 🔒 | Ganti password; sesi lain milik user ikut dicabut |
 | GET | `/api/v1/tenant` 🔒 | Profil institusi + `settings` efektif (zona waktu, locale, warna, kop, `logo_url`) |
-| PATCH | `/api/v1/tenant` 🔒 `tenant.manage` | Ubah `name`, `timezone` (IANA), `locale` (`id`/`en`), `primary_color` (`#RRGGBB`), `tagline` (sub judul header, maks 100), `letterhead` (teks kop, maks 500), `exam_rules` (tata tertib untuk lembar pengawas, teks maks 5000). `""` = kembali ke default |
+| PATCH | `/api/v1/tenant` 🔒 `tenant.manage` | Ubah `name`, `timezone` (IANA), `locale` (`id`/`en`), `primary_color` (`#RRGGBB`), `tagline` (sub judul header, maks 100), `letterhead` (teks kop, maks 500), `exam_rules` (tata tertib untuk lembar pengawas, teks maks 5000), `card` (setelan kartu peserta, objek lengkap: `title`, `id_label`, `note`, `signer_title`, `signer_name`, `signer_number`, `show_external_id`/`show_exam`/`show_session`/`show_seat`/`show_schedule`/`show_qr`). `""` = kembali ke default |
 | PUT | `/api/v1/tenant/logo` 🔒 `tenant.manage` | Unggah logo (multipart `file`, PNG/JPEG/WebP maks 1 MiB, jenis dideteksi dari isi; SVG ditolak) |
 | DELETE | `/api/v1/tenant/logo` 🔒 `tenant.manage` | Hapus logo |
+| PUT | `/api/v1/tenant/card-signature` 🔒 `tenant.manage` | Unggah gambar tanda tangan/stempel untuk kartu peserta (aturan file sama dengan logo). Tidak publik: `settings.card.signature_url` dan data cetak sesi memakai link bertanda tangan |
+| DELETE | `/api/v1/tenant/card-signature` 🔒 `tenant.manage` | Hapus gambar tanda tangan kartu |
 | GET | `/api/v1/roles` 🔒 `user.manage` | Daftar peran tenant (untuk memilih peran) |
 | GET | `/api/v1/users` 🔒 `user.manage` | Daftar pengguna. Query: `q`, `role`, `group_id`, `status`, `page`, `per_page` |
 | POST | `/api/v1/users` 🔒 `user.manage` | Buat pengguna. Tanpa `password` → `temporary_password` dibuat & ditampilkan **sekali**. Peran default `participant` |

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"doexam/models/opt"
+	modelTenant "doexam/models/tenant"
 )
 
 // MaxParticipantsPerRequest bounds POST /sessions/:id/participants (user ids + group members).
@@ -192,10 +193,11 @@ type PrintStatsDTO struct {
 
 // InstitutionDTO is what the printed documents show of the institution.
 type InstitutionDTO struct {
-	Name       string  `json:"name"`
-	Letterhead string  `json:"letterhead"`
-	ExamRules  string  `json:"exam_rules"`
-	LogoURL    *string `json:"logo_url"`
+	Name       string              `json:"name"`
+	Letterhead string              `json:"letterhead"`
+	ExamRules  string              `json:"exam_rules"`
+	LogoURL    *string             `json:"logo_url"`
+	Card       modelTenant.CardDTO `json:"card"` // participant card settings; signature_url is a signed link
 }
 
 // PrintDTO is GET /api/v1/sessions/:id/print: everything the session documents need.

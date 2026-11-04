@@ -78,7 +78,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	// ── Services (Core) ────────────────────────────────────────
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
 	mediaSvc := media.NewMediaService(mediaRepo, txManager, fileStore, mediaSigner, logger)
-	tenantSvc := tenant.NewTenantService(tenantRepo, txManager, hasher, fileStore, logger)
+	tenantSvc := tenant.NewTenantService(tenantRepo, txManager, hasher, fileStore, mediaSigner, logger)
 	authSvc := auth.NewAuthService(authRepo, txManager, hasher, cfg.SessionTTL, logger)
 	userSvc := user.NewUserService(userRepo, txManager, hasher, logger)
 	groupSvc := group.NewGroupService(groupRepo, txManager, logger)
@@ -87,7 +87,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, mediaSvc, logger)
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
 	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, logger)
-	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, importHasher, logger)
+	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, importHasher, mediaSigner, logger)
 	reportSvc := report.NewReportService(reportRepo, txManager, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
@@ -147,6 +147,8 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	v1.Patch("/tenant", requireAuth, tenantHandler.Update)
 	v1.Put("/tenant/logo", requireAuth, tenantHandler.SetLogo)
 	v1.Delete("/tenant/logo", requireAuth, tenantHandler.RemoveLogo)
+	v1.Put("/tenant/card-signature", requireAuth, tenantHandler.SetCardSignature)
+	v1.Delete("/tenant/card-signature", requireAuth, tenantHandler.RemoveCardSignature)
 	v1.Get("/roles", requireAuth, userHandler.ListRoles)
 
 	users := v1.Group("/users", requireAuth)

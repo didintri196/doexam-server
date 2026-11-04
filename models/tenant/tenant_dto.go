@@ -72,13 +72,14 @@ func SlugFromName(name string) string {
 // UpdateInput is the body of PATCH /api/v1/tenant. Nil fields are left unchanged;
 // an empty string resets a setting to its default (the name cannot be emptied).
 type UpdateInput struct {
-	Name         *string `json:"name"`
-	Timezone     *string `json:"timezone"`
-	Locale       *string `json:"locale"`
-	PrimaryColor *string `json:"primary_color"`
-	Tagline      *string `json:"tagline"`
-	Letterhead   *string `json:"letterhead"`
-	ExamRules    *string `json:"exam_rules"`
+	Name         *string    `json:"name"`
+	Timezone     *string    `json:"timezone"`
+	Locale       *string    `json:"locale"`
+	PrimaryColor *string    `json:"primary_color"`
+	Tagline      *string    `json:"tagline"`
+	Letterhead   *string    `json:"letterhead"`
+	ExamRules    *string    `json:"exam_rules"`
+	Card         *CardInput `json:"card"` // replaces every card setting (not the signature image)
 }
 
 // Normalize trims every field.
@@ -90,6 +91,9 @@ func (in *UpdateInput) Normalize() {
 	}
 	if in.PrimaryColor != nil {
 		*in.PrimaryColor = strings.ToLower(*in.PrimaryColor)
+	}
+	if in.Card != nil {
+		in.Card.Normalize()
 	}
 }
 
@@ -112,6 +116,7 @@ type SettingsDTO struct {
 	Letterhead   string  `json:"letterhead"`
 	ExamRules    string  `json:"exam_rules"`
 	LogoURL      *string `json:"logo_url"`
+	Card         CardDTO `json:"card"` // Card.SignatureURL is set by the service (signed link)
 }
 
 // PublicTenantDTO is what the login page may show before anyone signs in.
@@ -149,6 +154,7 @@ func ToDTO(e TenantEntity) TenantDTO {
 		Settings: SettingsDTO{
 			Timezone: orDefault(s.Timezone, DefaultTimezone), Locale: orDefault(s.Locale, DefaultLocale),
 			PrimaryColor: nonEmpty(s.PrimaryColor), Tagline: s.Tagline, Letterhead: s.Letterhead, ExamRules: s.ExamRules, LogoURL: LogoURL(e.Slug, s.LogoFileID),
+			Card: ToCardDTO(s.Card, nil),
 		},
 	}
 }
