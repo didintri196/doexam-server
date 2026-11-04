@@ -76,7 +76,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | POST | `/api/v1/auth/logout` 🔒 | Cabut sesi saat ini |
 | POST | `/api/v1/auth/change-password` 🔒 | Ganti password; sesi lain milik user ikut dicabut |
 | GET | `/api/v1/tenant` 🔒 | Profil institusi + `settings` efektif (zona waktu, locale, warna, kop, `logo_url`) |
-| PATCH | `/api/v1/tenant` 🔒 `tenant.manage` | Ubah `name`, `timezone` (IANA), `locale` (`id`/`en`), `primary_color` (`#RRGGBB`), `tagline` (sub judul header, maks 100), `letterhead` (teks kop, maks 500). `""` = kembali ke default |
+| PATCH | `/api/v1/tenant` 🔒 `tenant.manage` | Ubah `name`, `timezone` (IANA), `locale` (`id`/`en`), `primary_color` (`#RRGGBB`), `tagline` (sub judul header, maks 100), `letterhead` (teks kop, maks 500), `exam_rules` (tata tertib untuk lembar pengawas, teks maks 5000). `""` = kembali ke default |
 | PUT | `/api/v1/tenant/logo` 🔒 `tenant.manage` | Unggah logo (multipart `file`, PNG/JPEG/WebP maks 1 MiB, jenis dideteksi dari isi; SVG ditolak) |
 | DELETE | `/api/v1/tenant/logo` 🔒 `tenant.manage` | Hapus logo |
 | GET | `/api/v1/roles` 🔒 `user.manage` | Daftar peran tenant (untuk memilih peran) |
@@ -125,6 +125,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET/PATCH/DELETE | `/api/v1/sessions/:id` 🔒 | Detail (ujian, proktor, grup, rekap kehadiran) / ubah / hapus (hanya `scheduled` tanpa attempt) |
 | POST | `/api/v1/sessions/:id/status` 🔒 | `{status: open\|paused\|closed\|cancelled}` — proktor boleh buka/jeda/tutup, batal hanya manager |
 | GET | `/api/v1/sessions/:id/token` 🔒 | Token ruang saat ini `{code, expires_at, rotation_minutes}` (manager & proktor sesi) |
+| GET | `/api/v1/sessions/:id/print` 🔒 | Data dokumen cetak sesi (manager & proktor sesi): `session`, `institution` `{name, letterhead, exam_rules, logo_url}`, `participants` (urut kursi lalu nama, dengan `attempt_status` terakhir), `stats` `{registered, present, absent, excused, started, submitted}` untuk berita acara. Peserta yang sudah mulai mengerjakan dihitung hadir |
 | POST | `/api/v1/sessions/:id/token/rotate` 🔒 `session.manage` | Ganti secret: kode lama langsung tidak berlaku |
 | PUT | `/api/v1/sessions/:id/proctors` 🔒 `session.manage` | Ganti daftar proktor `{user_ids}` (harus punya izin `session.proctor`) |
 | GET/POST | `/api/v1/sessions/:id/participants` 🔒 | Daftar peserta (`q`, `attendance`) / tambah `{user_ids?, group_ids?, extra_time_minutes?}` (total ≤5000) `session.manage` |

@@ -245,6 +245,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	sessions.Delete("/:id", sessionHandler.Delete)
 	sessions.Post("/:id/status", sessionHandler.SetStatus)
 	sessions.Get("/:id/token", sessionHandler.Token)
+	sessions.Get("/:id/print", sessionHandler.Print)
 	sessions.Post("/:id/token/rotate", sessionHandler.RotateToken)
 	sessions.Put("/:id/proctors", sessionHandler.SetProctors)
 	sessions.Get("/:id/participants", sessionHandler.ListParticipants)
