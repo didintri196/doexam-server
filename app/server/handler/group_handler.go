@@ -112,10 +112,26 @@ func (h *GroupHandler) AddMembers(c *fiber.Ctx) error {
 	if err := c.BodyParser(&in); err != nil {
 		return badBody(c)
 	}
-	if err := h.groupSvc.AddMembers(c.UserContext(), principal(c), c.Params("id"), in, clientInfo(c)); err != nil {
+	dto, err := h.groupSvc.AddMembers(c.UserContext(), principal(c), c.Params("id"), in, clientInfo(c))
+	if err != nil {
 		return handleError(c, logger, "failed to add group members", err)
 	}
-	return SuccessResponse(c, fiber.StatusOK, "members added", nil)
+	return SuccessResponse(c, fiber.StatusOK, "members added", dto)
+}
+
+// RemoveMembers handles POST /api/v1/groups/:id/members/remove {user_ids}.
+func (h *GroupHandler) RemoveMembers(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+
+	var in modelGroup.RemoveMembersInput
+	if err := c.BodyParser(&in); err != nil {
+		return badBody(c)
+	}
+	dto, err := h.groupSvc.RemoveMembers(c.UserContext(), principal(c), c.Params("id"), in, clientInfo(c))
+	if err != nil {
+		return handleError(c, logger, "failed to remove group members", err)
+	}
+	return SuccessResponse(c, fiber.StatusOK, "members removed", dto)
 }
 
 // RemoveMember handles DELETE /api/v1/groups/:id/members/:user_id.

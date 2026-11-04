@@ -81,13 +81,16 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | PATCH | `/api/v1/users/:id` 🔒 `user.manage` | Ubah `full_name`, `email`, `external_id`, `status`, `role_codes` (ganti semua). `""` mengosongkan email/external_id |
 | DELETE | `/api/v1/users/:id` 🔒 `user.manage` | Hapus (soft delete); username bisa dipakai lagi |
 | POST | `/api/v1/users/:id/reset-password` 🔒 `user.manage` | Password sementara baru (tampil sekali), wajib ganti saat login |
+| POST | `/api/v1/users/resolve` 🔒 `user.manage` / `group.manage` / `session.manage` | Cocokkan `{identifiers[≤5000]}` (username, ID peserta/`external_id`, atau email; tanpa beda huruf besar-kecil) → `{found[], not_found[], ambiguous[]}`. `found` tanpa email, satu entri per pengguna |
+| POST | `/api/v1/users/resolve-file` 🔒 sama | Sama, dari file `.xlsx`/`.csv` (multipart `file`, ≤5 MB, ≤5000 baris). Kolom `username`/`external_id`/`id_peserta`/`email`, atau kolom pertama |
 | GET | `/api/v1/groups` 🔒 | Daftar grup. Query: `parent_id` (UUID / `root`), `kind`, `period`, `q`, `page`, `per_page` |
 | POST | `/api/v1/groups` 🔒 `group.manage` | Buat grup `{kind, name, code?, period?, parent_id?}` |
 | GET | `/api/v1/groups/:id` 🔒 | Detail grup + jumlah anggota |
 | PATCH | `/api/v1/groups/:id` 🔒 `group.manage` | Ubah grup / pindah induk (`parent_id: ""` = ke akar) |
 | DELETE | `/api/v1/groups/:id` 🔒 `group.manage` | Hapus grup tanpa subgrup (409 bila masih punya subgrup) |
 | GET | `/api/v1/groups/:id/members` 🔒 | Anggota grup (leader dulu) |
-| POST | `/api/v1/groups/:id/members` 🔒 `group.manage` | Tambah anggota `{user_ids[≤500], member_role?}`; anggota lama diperbarui perannya |
+| POST | `/api/v1/groups/:id/members` 🔒 `group.manage` | Tambah anggota `{user_ids?, from_group_id?, member_role?}` (total ≤5000) → `{requested, added}` (`added` = yang sebelumnya belum jadi anggota). Anggota di `user_ids` yang sudah ada diperbarui perannya; anggota yang disalin dari `from_group_id` dan sudah ada tetap dengan perannya |
+| POST | `/api/v1/groups/:id/members/remove` 🔒 `group.manage` | Keluarkan banyak anggota `{user_ids[≤5000]}` → `{removed}` |
 | DELETE | `/api/v1/groups/:id/members/:user_id` 🔒 `group.manage` | Keluarkan anggota |
 | GET/POST | `/api/v1/subjects` 🔒 | Daftar (`q`, `page`) / buat subjek `{code, name}` |
 | GET/PATCH/DELETE | `/api/v1/subjects/:id` 🔒 | Detail / ubah / hapus subjek (409 bila masih punya bank soal) |
@@ -119,7 +122,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET | `/api/v1/sessions/:id/token` 🔒 | Token ruang saat ini `{code, expires_at, rotation_minutes}` (manager & proktor sesi) |
 | POST | `/api/v1/sessions/:id/token/rotate` 🔒 `session.manage` | Ganti secret: kode lama langsung tidak berlaku |
 | PUT | `/api/v1/sessions/:id/proctors` 🔒 `session.manage` | Ganti daftar proktor `{user_ids}` (harus punya izin `session.proctor`) |
-| GET/POST | `/api/v1/sessions/:id/participants` 🔒 | Daftar peserta (`q`, `attendance`) / tambah `{user_ids?, group_ids?, extra_time_minutes?}` `session.manage` |
+| GET/POST | `/api/v1/sessions/:id/participants` 🔒 | Daftar peserta (`q`, `attendance`) / tambah `{user_ids?, group_ids?, extra_time_minutes?}` (total ≤5000) `session.manage` |
 | PATCH/DELETE | `/api/v1/sessions/:id/participants/:user_id` 🔒 | Kehadiran, kursi, catatan (proktor) & `extra_time_minutes` (manager) / keluarkan (belum mulai) |
 | GET | `/api/v1/my/sessions` 🔒 | Sesi milik peserta yang login (tanpa token) |
 | POST | `/api/v1/attempts` 🔒 `attempt.take` | Mulai / lanjutkan ujian `{session_id, token}` + header `X-Device-ID` → soal tanpa kunci |

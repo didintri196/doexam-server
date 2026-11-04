@@ -136,6 +136,8 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	users := v1.Group("/users", requireAuth)
 	users.Get("/", userHandler.List)
 	users.Post("/", userHandler.Create)
+	users.Post("/resolve", userHandler.Resolve)
+	users.Post("/resolve-file", userHandler.ResolveFile)
 	users.Get("/:id", userHandler.Get)
 	users.Patch("/:id", userHandler.Update)
 	users.Delete("/:id", userHandler.Delete)
@@ -149,6 +151,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	groups.Delete("/:id", groupHandler.Delete)
 	groups.Get("/:id/members", groupHandler.ListMembers)
 	groups.Post("/:id/members", groupHandler.AddMembers)
+	groups.Post("/:id/members/remove", groupHandler.RemoveMembers)
 	groups.Delete("/:id/members/:user_id", groupHandler.RemoveMember)
 
 	imports := v1.Group("/imports", requireAuth)

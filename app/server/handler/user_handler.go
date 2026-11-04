@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"io"
+
 	"github.com/gofiber/fiber/v2"
 
 	"doexam/business/user"
 	modelAuth "doexam/models/auth"
 	modelUser "doexam/models/user"
+	"doexam/pkg/errr"
 	"doexam/pkg/middleware"
 )
 
@@ -109,4 +112,44 @@ func (h *UserHandler) ResetPassword(c *fiber.Ctx) error {
 		return handleError(c, logger, "failed to reset password", err)
 	}
 	return SuccessResponse(c, fiber.StatusOK, "password reset", dto)
+}
+
+// Resolve handles POST /api/v1/users/resolve: maps usernames, external ids or e-mails to users.
+func (h *UserHandler) Resolve(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+
+	var in modelUser.ResolveInput
+	if err := c.BodyParser(&in); err != nil {
+		return badBody(c)
+	}
+	dto, err := h.userSvc.Resolve(c.UserContext(), principal(c), in)
+	if err != nil {
+		return handleError(c, logger, "failed to resolve users", err)
+	}
+	return SuccessResponse(c, fiber.StatusOK, "users resolved", dto)
+}
+
+// ResolveFile handles POST /api/v1/users/resolve-file (multipart field "file", .xlsx/.csv).
+func (h *UserHandler) ResolveFile(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return handleError(c, logger, "missing file", &errr.ValidationError{Fields: map[string]string{"file": "required"}})
+	}
+	f, err := fh.Open()
+	if err != nil {
+		return handleError(c, logger, "failed to open upload", err)
+	}
+	defer f.Close()
+	// read one byte past the limit so the service can reject oversized files
+	data, err := io.ReadAll(io.LimitReader(f, modelUser.MaxResolveFileBytes+1))
+	if err != nil {
+		return handleError(c, logger, "failed to read upload", err)
+	}
+	dto, err := h.userSvc.ResolveFile(c.UserContext(), principal(c), fh.Filename, data)
+	if err != nil {
+		return handleError(c, logger, "failed to resolve users", err)
+	}
+	return SuccessResponse(c, fiber.StatusOK, "users resolved", dto)
 }

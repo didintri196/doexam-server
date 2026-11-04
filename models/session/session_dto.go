@@ -7,7 +7,7 @@ import (
 )
 
 // MaxParticipantsPerRequest bounds POST /sessions/:id/participants (user ids + group members).
-const MaxParticipantsPerRequest = 2000
+const MaxParticipantsPerRequest = 5000
 
 // ListFilter pages GET /api/v1/sessions.
 type ListFilter struct {

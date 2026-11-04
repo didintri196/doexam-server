@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,19 @@ func (f *fakeStore) FindByID(_ context.Context, id string) (modelAuth.UserEntity
 		return u, nil
 	}
 	return modelAuth.UserEntity{}, errUserNotFound
+}
+func (f *fakeStore) FindByIdentifiers(_ context.Context, keys []string) ([]modelAuth.UserEntity, error) {
+	var out []modelAuth.UserEntity
+	for _, u := range f.users {
+		for _, k := range keys {
+			if strings.ToLower(u.Username) == k || (u.ExternalID != nil && strings.ToLower(*u.ExternalID) == k) ||
+				(u.Email != nil && strings.ToLower(*u.Email) == k) {
+				out = append(out, u)
+				break
+			}
+		}
+	}
+	return out, nil
 }
 func (f *fakeStore) Create(_ context.Context, u *modelAuth.UserEntity) error {
 	for _, e := range f.users {

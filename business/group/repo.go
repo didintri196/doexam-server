@@ -186,11 +186,59 @@ func (r *GroupRepo) UpsertMembers(ctx context.Context, members []modelGroup.Grou
 	err := dbpg.Conn(ctx, r.db).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "group_id"}, {Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"member_role"}),
-	}).Create(&members).Error
+	}).CreateInBatches(&members, 1000).Error
 	if err != nil {
 		return fmt.Errorf("upsert group members: %w", err)
 	}
 	return nil
+}
+
+func (r *GroupRepo) InsertMissingMembers(ctx context.Context, members []modelGroup.GroupMemberEntity) error {
+	if len(members) == 0 {
+		return nil
+	}
+	err := dbpg.Conn(ctx, r.db).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&members, 1000).Error
+	if err != nil {
+		return fmt.Errorf("insert group members: %w", err)
+	}
+	return nil
+}
+
+func (r *GroupRepo) MemberUserIDs(ctx context.Context, groupID string) ([]string, error) {
+	var ids []string
+	err := dbpg.Conn(ctx, r.db).Table("group_members gm").
+		Joins("JOIN users u ON u.id = gm.user_id AND u.deleted_at IS NULL").
+		Where("gm.group_id = ?", groupID).Order("gm.joined_at, gm.user_id").
+		Pluck("gm.user_id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("member ids of group %s: %w", groupID, err)
+	}
+	return ids, nil
+}
+
+func (r *GroupRepo) ExistingMemberIDs(ctx context.Context, groupID string, userIDs []string) ([]string, error) {
+	var ids []string
+	if len(userIDs) == 0 {
+		return ids, nil
+	}
+	err := dbpg.Conn(ctx, r.db).Model(&modelGroup.GroupMemberEntity{}).
+		Where("group_id = ? AND user_id IN ?", groupID, userIDs).Pluck("user_id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("existing members of group %s: %w", groupID, err)
+	}
+	return ids, nil
+}
+
+func (r *GroupRepo) RemoveMembers(ctx context.Context, groupID string, userIDs []string) (int64, error) {
+	if len(userIDs) == 0 {
+		return 0, nil
+	}
+	res := dbpg.Conn(ctx, r.db).Where("group_id = ? AND user_id IN ?", groupID, userIDs).
+		Delete(&modelGroup.GroupMemberEntity{})
+	if res.Error != nil {
+		return 0, fmt.Errorf("remove members of group %s: %w", groupID, res.Error)
+	}
+	return res.RowsAffected, nil
 }
 
 func (r *GroupRepo) RemoveMember(ctx context.Context, groupID, userID string) (bool, error) {

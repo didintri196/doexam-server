@@ -19,6 +19,9 @@ type UserStorer interface {
 
 	List(ctx context.Context, f modelUser.ListFilter) ([]modelAuth.UserEntity, int64, error)
 	FindByID(ctx context.Context, id string) (modelAuth.UserEntity, error)
+	// FindByIdentifiers returns non-deleted users whose lower(username), lower(external_id)
+	// or lower(email) is one of keys (already lowercased).
+	FindByIdentifiers(ctx context.Context, keys []string) ([]modelAuth.UserEntity, error)
 	Create(ctx context.Context, u *modelAuth.UserEntity) error
 	// Update writes full_name, email, external_id and status of u.
 	Update(ctx context.Context, u *modelAuth.UserEntity) error

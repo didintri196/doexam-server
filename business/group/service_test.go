@@ -103,6 +103,44 @@ func (f *fakeStore) UpsertMembers(_ context.Context, ms []modelGroup.GroupMember
 	}
 	return nil
 }
+func (f *fakeStore) InsertMissingMembers(_ context.Context, ms []modelGroup.GroupMemberEntity) error {
+	for _, m := range ms {
+		if f.members[m.GroupID] == nil {
+			f.members[m.GroupID] = map[string]modelGroup.MemberRole{}
+		}
+		if _, ok := f.members[m.GroupID][m.UserID]; !ok {
+			f.members[m.GroupID][m.UserID] = m.MemberRole
+		}
+	}
+	return nil
+}
+func (f *fakeStore) MemberUserIDs(_ context.Context, gid string) ([]string, error) {
+	var out []string
+	for uid := range f.members[gid] {
+		out = append(out, uid)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+func (f *fakeStore) ExistingMemberIDs(_ context.Context, gid string, uids []string) ([]string, error) {
+	var out []string
+	for _, uid := range uids {
+		if _, ok := f.members[gid][uid]; ok {
+			out = append(out, uid)
+		}
+	}
+	return out, nil
+}
+func (f *fakeStore) RemoveMembers(_ context.Context, gid string, uids []string) (int64, error) {
+	var n int64
+	for _, uid := range uids {
+		if _, ok := f.members[gid][uid]; ok {
+			delete(f.members[gid], uid)
+			n++
+		}
+	}
+	return n, nil
+}
 func (f *fakeStore) RemoveMember(_ context.Context, gid, uid string) (bool, error) {
 	if _, ok := f.members[gid][uid]; !ok {
 		return false, nil
@@ -231,7 +269,7 @@ func TestMembers(t *testing.T) {
 	gid := mustCreate(t, svc, "X IPA 1", nil)
 
 	// duplicates and case are normalised
-	err := svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{UserIDs: []string{userA, userA, " " + userB + " "}}, modelAudit.Client{})
+	_, err := svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{UserIDs: []string{userA, userA, " " + userB + " "}}, modelAudit.Client{})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -240,19 +278,19 @@ func TestMembers(t *testing.T) {
 	}
 
 	// re-adding updates the role (upsert)
-	if err := svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{UserIDs: []string{userA}, MemberRole: modelGroup.MemberRoleLeader}, modelAudit.Client{}); err != nil {
+	if _, err := svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{UserIDs: []string{userA}, MemberRole: modelGroup.MemberRoleLeader}, modelAudit.Client{}); err != nil {
 		t.Fatal(err)
 	}
 	if store.members[gid][userA] != modelGroup.MemberRoleLeader {
 		t.Fatal("member_role must be updated")
 	}
 
-	err = svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{UserIDs: []string{userA, missing}}, modelAudit.Client{})
+	_, err = svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{UserIDs: []string{userA, missing}}, modelAudit.Client{})
 	var ve *errr.ValidationError
 	if !errors.As(err, &ve) || ve.Fields["user_ids"] == "" {
 		t.Fatalf("unknown user: err = %v, want user_ids validation error", err)
 	}
-	if err := svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{}, modelAudit.Client{}); !errors.Is(err, errr.ErrInvalidInput) {
+	if _, err := svc.AddMembers(ctx, managerP, gid, modelGroup.AddMembersInput{}, modelAudit.Client{}); !errors.Is(err, errr.ErrInvalidInput) {
 		t.Fatalf("empty: err = %v, want ErrInvalidInput", err)
 	}
 
@@ -262,7 +300,54 @@ func TestMembers(t *testing.T) {
 	if err := svc.RemoveMember(ctx, managerP, gid, userB, modelAudit.Client{}); !errors.Is(err, errr.ErrNotFound) {
 		t.Fatalf("remove again: err = %v, want ErrNotFound", err)
 	}
-	if err := svc.AddMembers(ctx, managerP, missing, modelGroup.AddMembersInput{UserIDs: []string{userA}}, modelAudit.Client{}); !errors.Is(err, errr.ErrNotFound) {
+	if _, err := svc.AddMembers(ctx, managerP, missing, modelGroup.AddMembersInput{UserIDs: []string{userA}}, modelAudit.Client{}); !errors.Is(err, errr.ErrNotFound) {
 		t.Fatalf("unknown group: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCopyAndBulkRemoveMembers(t *testing.T) {
+	store := newStore()
+	svc, ctx := newService(store), context.Background()
+	src := mustCreate(t, svc, "Angkatan 2026", nil)
+	dst := mustCreate(t, svc, "Kelompok A", nil)
+
+	if _, err := svc.AddMembers(ctx, managerP, src, modelGroup.AddMembersInput{UserIDs: []string{userA, userB}}, modelAudit.Client{}); err != nil {
+		t.Fatal(err)
+	}
+	// userA is already a leader of dst: copying must not demote them
+	if _, err := svc.AddMembers(ctx, managerP, dst, modelGroup.AddMembersInput{UserIDs: []string{userA}, MemberRole: modelGroup.MemberRoleLeader}, modelAudit.Client{}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := svc.AddMembers(ctx, managerP, dst, modelGroup.AddMembersInput{FromGroupID: &src}, modelAudit.Client{})
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	if res.Requested != 2 || res.Added != 1 || len(store.members[dst]) != 2 {
+		t.Fatalf("copy result = %+v, members = %v", res, store.members[dst])
+	}
+	if store.members[dst][userA] != modelGroup.MemberRoleLeader || store.members[dst][userB] != modelGroup.MemberRoleMember {
+		t.Fatalf("roles after copy = %v, want leader kept and new member", store.members[dst])
+	}
+
+	var ve *errr.ValidationError
+	for name, in := range map[string]modelGroup.AddMembersInput{
+		"copy from itself":  {FromGroupID: &dst},
+		"unknown source":    {FromGroupID: ptr(missing)},
+		"source not a uuid": {FromGroupID: ptr("abc")},
+	} {
+		if _, err := svc.AddMembers(ctx, managerP, dst, in, modelAudit.Client{}); !errors.As(err, &ve) || ve.Fields["from_group_id"] == "" {
+			t.Fatalf("%s: err = %v, want from_group_id error", name, err)
+		}
+	}
+
+	out, err := svc.RemoveMembers(ctx, managerP, dst, modelGroup.RemoveMembersInput{UserIDs: []string{userA, userB, missing}}, modelAudit.Client{})
+	if err != nil || out.Removed != 2 || len(store.members[dst]) != 0 {
+		t.Fatalf("bulk remove: out = %+v, err = %v, members = %v", out, err, store.members[dst])
+	}
+	if _, err := svc.RemoveMembers(ctx, managerP, dst, modelGroup.RemoveMembersInput{}, modelAudit.Client{}); !errors.As(err, &ve) {
+		t.Fatalf("empty remove: err = %v", err)
+	}
+	if _, err := svc.RemoveMembers(ctx, organizerP, dst, modelGroup.RemoveMembersInput{UserIDs: []string{userA}}, modelAudit.Client{}); !errors.Is(err, errr.ErrForbidden) {
+		t.Fatalf("no group.manage: err = %v", err)
 	}
 }
