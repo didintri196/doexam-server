@@ -54,10 +54,11 @@ type RemoveMembersInput struct {
 	UserIDs []string `json:"user_ids"`
 }
 
-// AddResultDTO reports how many users were requested to be added (user_ids plus copied
-// members). Users who were already members are included.
+// AddResultDTO reports how many users were requested (user_ids plus copied members) and
+// how many of them were not members before.
 type AddResultDTO struct {
 	Requested int `json:"requested"`
+	Added     int `json:"added"`
 }
 
 // RemoveResultDTO reports how many memberships were deleted.

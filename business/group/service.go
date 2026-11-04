@@ -332,6 +332,10 @@ func (s *GroupService) AddMembers(ctx context.Context, p modelAuth.Principal, gr
 				return &errr.ValidationError{Fields: map[string]string{"user_ids": "unknown users: " + strings.Join(missing, ", ")}}
 			}
 		}
+		existing, err := s.storer.ExistingMemberIDs(ctx, groupID, append(slices.Clone(ids), copied...))
+		if err != nil {
+			return err
+		}
 		now := s.now().UTC()
 		rows := func(uids []string) []modelGroup.GroupMemberEntity {
 			out := make([]modelGroup.GroupMemberEntity, len(uids))
@@ -346,7 +350,7 @@ func (s *GroupService) AddMembers(ctx context.Context, p modelAuth.Principal, gr
 		if err := s.storer.InsertMissingMembers(ctx, rows(copied)); err != nil {
 			return err
 		}
-		out = modelGroup.AddResultDTO{Requested: len(ids) + len(copied)}
+		out = modelGroup.AddResultDTO{Requested: len(ids) + len(copied), Added: len(ids) + len(copied) - len(existing)}
 		after := map[string]any{"user_ids": ids, "member_role": in.MemberRole}
 		if from != "" {
 			after["from_group_id"] = from

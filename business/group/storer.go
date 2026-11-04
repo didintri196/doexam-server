@@ -29,6 +29,8 @@ type GroupStorer interface {
 	InsertMissingMembers(ctx context.Context, members []modelGroup.GroupMemberEntity) error
 	// MemberUserIDs returns the user ids of all members of groupID.
 	MemberUserIDs(ctx context.Context, groupID string) ([]string, error)
+	// ExistingMemberIDs returns which of userIDs are already members of groupID.
+	ExistingMemberIDs(ctx context.Context, groupID string, userIDs []string) ([]string, error)
 	// RemoveMember reports whether a membership was deleted.
 	RemoveMember(ctx context.Context, groupID, userID string) (bool, error)
 	// RemoveMembers deletes the memberships of userIDs in groupID and returns how many.

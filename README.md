@@ -89,7 +89,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | PATCH | `/api/v1/groups/:id` 🔒 `group.manage` | Ubah grup / pindah induk (`parent_id: ""` = ke akar) |
 | DELETE | `/api/v1/groups/:id` 🔒 `group.manage` | Hapus grup tanpa subgrup (409 bila masih punya subgrup) |
 | GET | `/api/v1/groups/:id/members` 🔒 | Anggota grup (leader dulu) |
-| POST | `/api/v1/groups/:id/members` 🔒 `group.manage` | Tambah anggota `{user_ids?, from_group_id?, member_role?}` (total ≤5000) → `{requested}`. Anggota di `user_ids` yang sudah ada diperbarui perannya; anggota yang disalin dari `from_group_id` dan sudah ada tetap dengan perannya |
+| POST | `/api/v1/groups/:id/members` 🔒 `group.manage` | Tambah anggota `{user_ids?, from_group_id?, member_role?}` (total ≤5000) → `{requested, added}` (`added` = yang sebelumnya belum jadi anggota). Anggota di `user_ids` yang sudah ada diperbarui perannya; anggota yang disalin dari `from_group_id` dan sudah ada tetap dengan perannya |
 | POST | `/api/v1/groups/:id/members/remove` 🔒 `group.manage` | Keluarkan banyak anggota `{user_ids[≤5000]}` → `{removed}` |
 | DELETE | `/api/v1/groups/:id/members/:user_id` 🔒 `group.manage` | Keluarkan anggota |
 | GET/POST | `/api/v1/subjects` 🔒 | Daftar (`q`, `page`) / buat subjek `{code, name}` |

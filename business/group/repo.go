@@ -216,6 +216,19 @@ func (r *GroupRepo) MemberUserIDs(ctx context.Context, groupID string) ([]string
 	return ids, nil
 }
 
+func (r *GroupRepo) ExistingMemberIDs(ctx context.Context, groupID string, userIDs []string) ([]string, error) {
+	var ids []string
+	if len(userIDs) == 0 {
+		return ids, nil
+	}
+	err := dbpg.Conn(ctx, r.db).Model(&modelGroup.GroupMemberEntity{}).
+		Where("group_id = ? AND user_id IN ?", groupID, userIDs).Pluck("user_id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("existing members of group %s: %w", groupID, err)
+	}
+	return ids, nil
+}
+
 func (r *GroupRepo) RemoveMembers(ctx context.Context, groupID string, userIDs []string) (int64, error) {
 	if len(userIDs) == 0 {
 		return 0, nil

@@ -122,6 +122,15 @@ func (f *fakeStore) MemberUserIDs(_ context.Context, gid string) ([]string, erro
 	slices.Sort(out)
 	return out, nil
 }
+func (f *fakeStore) ExistingMemberIDs(_ context.Context, gid string, uids []string) ([]string, error) {
+	var out []string
+	for _, uid := range uids {
+		if _, ok := f.members[gid][uid]; ok {
+			out = append(out, uid)
+		}
+	}
+	return out, nil
+}
 func (f *fakeStore) RemoveMembers(_ context.Context, gid string, uids []string) (int64, error) {
 	var n int64
 	for _, uid := range uids {
@@ -313,7 +322,7 @@ func TestCopyAndBulkRemoveMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("copy: %v", err)
 	}
-	if res.Requested != 2 || len(store.members[dst]) != 2 {
+	if res.Requested != 2 || res.Added != 1 || len(store.members[dst]) != 2 {
 		t.Fatalf("copy result = %+v, members = %v", res, store.members[dst])
 	}
 	if store.members[dst][userA] != modelGroup.MemberRoleLeader || store.members[dst][userB] != modelGroup.MemberRoleMember {
