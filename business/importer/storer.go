@@ -28,6 +28,15 @@ type ImportStorer interface {
 	ExistingExternalIDs(ctx context.Context, values []string) ([]string, error)
 	RolesByCodes(ctx context.Context, codes []string) ([]modelAuth.RoleEntity, error)
 	GroupsByCodes(ctx context.Context, codes []string) ([]modelGroup.GroupEntity, error)
+	// FindGroup returns a (non-deleted) group of the tenant.
+	FindGroup(ctx context.Context, id string) (modelGroup.GroupEntity, error)
+	// UsersByLogin returns (non-deleted) users whose username (case-insensitive) or
+	// external id is in the lists.
+	UsersByLogin(ctx context.Context, usernames, externalIDs []string) ([]modelAuth.UserEntity, error)
+	// GroupMemberIDs returns which of userIDs are members of the group.
+	GroupMemberIDs(ctx context.Context, groupID string, userIDs []string) ([]string, error)
+	// AddMembers inserts members, skipping existing ones; it returns how many were added.
+	AddMembers(ctx context.Context, members []modelGroup.GroupMemberEntity) (int64, error)
 
 	CreateUsers(ctx context.Context, users []modelAuth.UserEntity) error
 	CreateUserRoles(ctx context.Context, links []modelAuth.UserRoleEntity) error

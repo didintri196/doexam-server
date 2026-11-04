@@ -87,11 +87,16 @@ func (s *ImportService) Template(p modelAuth.Principal, kind modelImport.Kind) (
 
 // Upload stores the file, validates all rows and returns the job (ready or failed).
 // A file that cannot be read at all is rejected with a validation error and no job.
-func (s *ImportService) Upload(ctx context.Context, p modelAuth.Principal, kind modelImport.Kind, filename string, data []byte, client modelAudit.Client) (modelImport.JobDTO, error) {
+// target narrows a user import to staff, participants, or participants of one group.
+func (s *ImportService) Upload(ctx context.Context, p modelAuth.Principal, kind modelImport.Kind, target modelImport.Target, filename string, data []byte, client modelAudit.Client) (modelImport.JobDTO, error) {
 	ctx, span := s.tracer.Start(ctx, "ImportService.Upload", trace.WithAttributes(attribute.String("import.kind", string(kind))))
 	defer span.End()
 
-	if err := authorize(p, kind); err != nil {
+	target, err := normalizeTarget(kind, target)
+	if err != nil {
+		return modelImport.JobDTO{}, fail(span, err)
+	}
+	if err := authorizeTarget(p, kind, target); err != nil {
 		return modelImport.JobDTO{}, fail(span, err)
 	}
 	if len(data) == 0 || len(data) > modelImport.MaxFileBytes {
@@ -104,6 +109,14 @@ func (s *ImportService) Upload(ctx context.Context, p modelAuth.Principal, kind 
 	sheet, err := spreadsheet.Read(data, format, modelImport.MaxRows)
 	if err != nil {
 		return modelImport.JobDTO{}, fail(span, &errr.ValidationError{Fields: map[string]string{"file": err.Error()}})
+	}
+	if target.GroupID != "" {
+		if err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
+			_, err := s.storer.FindGroup(ctx, target.GroupID)
+			return err
+		}); err != nil {
+			return modelImport.JobDTO{}, fail(span, err)
+		}
 	}
 
 	now := s.now().UTC()
@@ -121,6 +134,7 @@ func (s *ImportService) Upload(ctx context.Context, p modelAuth.Principal, kind 
 	job := modelImport.ImportJobEntity{
 		ID: newID(), TenantID: p.TenantID, Kind: kind, SourceFileID: file.ID,
 		Status: modelImport.StatusValidating, Errors: modelImport.EncodeErrors(nil),
+		Target: target.Encode(), Summary: modelImport.Summary{}.Encode(),
 		CreatedBy: &p.UserID, CreatedAt: now,
 	}
 	err = s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
@@ -130,13 +144,13 @@ func (s *ImportService) Upload(ctx context.Context, p modelAuth.Principal, kind 
 		if err := s.storer.CreateJob(ctx, &job); err != nil {
 			return err
 		}
-		valid, errs, err := s.validate(ctx, p.TenantID, kind, sheet)
+		valid, errs, warns, err := s.validate(ctx, p.TenantID, kind, target, sheet)
 		if err != nil {
 			return err
 		}
 		job.TotalRows, job.OkRows = len(sheet.Rows), valid
 		job.ErrorRows = len(sheet.Rows) - valid
-		job.Errors = modelImport.EncodeErrors(errs)
+		job.Errors = modelImport.EncodeErrors(sortErrors(append(errs, warns...)))
 		job.Status = modelImport.StatusReady
 		if len(errs) > 0 || len(sheet.Rows) == 0 {
 			job.Status = modelImport.StatusFailed
@@ -148,13 +162,36 @@ func (s *ImportService) Upload(ctx context.Context, p modelAuth.Principal, kind 
 		return s.storer.CreateAuditLog(ctx, modelAudit.New(modelAudit.Entry{
 			TenantID: p.TenantID, ActorID: p.UserID, Action: modelAudit.ActionImportUpload,
 			EntityType: "import_job", EntityID: job.ID, Client: client,
-			After: map[string]any{"kind": kind, "file": file.OriginalName, "rows": job.TotalRows, "status": job.Status},
+			After: map[string]any{"kind": kind, "target": target, "file": file.OriginalName, "rows": job.TotalRows, "status": job.Status},
 		}))
 	})
 	if err != nil {
 		return modelImport.JobDTO{}, fail(span, err)
 	}
 	return modelImport.ToDTO(modelImport.JobRow{ImportJobEntity: job, FileName: file.OriginalName}, false), nil
+}
+
+// normalizeTarget validates a target; a group target is always a participant import.
+func normalizeTarget(kind modelImport.Kind, t modelImport.Target) (modelImport.Target, error) {
+	t.GroupID = strings.ToLower(strings.TrimSpace(t.GroupID))
+	if kind != modelImport.KindUsers {
+		if t != (modelImport.Target{}) {
+			return t, &errr.ValidationError{Fields: map[string]string{"audience": "only for user imports"}}
+		}
+		return t, nil
+	}
+	if t.GroupID != "" {
+		if uuid.Validate(t.GroupID) != nil {
+			return t, errr.WithMessage(errr.ErrNotFound, "group not found")
+		}
+		if t.Audience == "" {
+			t.Audience = modelImport.AudienceParticipant
+		}
+	}
+	v := errr.Validation{}
+	v.Check(t.Audience == "" || t.Audience == modelImport.AudienceStaff || t.Audience == modelImport.AudienceParticipant, "audience", "must be staff or participant")
+	v.Check(t.GroupID == "" || t.Audience == modelImport.AudienceParticipant, "group_id", "only for participant imports")
+	return t, v.Err()
 }
 
 // Get returns one job.
@@ -182,6 +219,16 @@ func (s *ImportService) List(ctx context.Context, p modelAuth.Principal, f model
 	}
 	if f.Kind != "" && f.Kind != modelImport.KindUsers && f.Kind != modelImport.KindGroups {
 		return nil, 0, errUnsupportedKnd
+	}
+	if f.Audience != "" || f.GroupID != "" {
+		t, err := normalizeTarget(modelImport.KindUsers, modelImport.Target{Audience: f.Audience, GroupID: f.GroupID})
+		if err != nil {
+			return nil, 0, fail(span, err)
+		}
+		if err := authorizeTarget(p, modelImport.KindUsers, t); err != nil {
+			return nil, 0, fail(span, err)
+		}
+		f.Audience, f.GroupID, kinds = t.Audience, t.GroupID, []modelImport.Kind{modelImport.KindUsers}
 	}
 	if len(kinds) == 0 {
 		return nil, 0, fail(span, errr.ErrForbidden)
@@ -330,15 +377,16 @@ func (s *ImportService) importFile(ctx context.Context, p modelAuth.Principal, j
 	}
 
 	// Validation outside the write transaction so the slow hashing in between holds no connection.
+	target := modelImport.DecodeTarget(job.Target)
 	var (
-		users  []userPlan
+		batch  userBatch
 		groups []modelGroup.GroupEntity
 		errs   []modelImport.RowError
 	)
 	err = s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
 		var err error
 		if job.Kind == modelImport.KindUsers {
-			users, errs, err = s.planUsers(ctx, p.TenantID, sheet.Rows)
+			batch, errs, err = s.planUsers(ctx, p.TenantID, target, sheet.Rows)
 		} else {
 			groups, errs, err = s.planGroups(ctx, p.TenantID, sheet.Rows)
 		}
@@ -350,21 +398,36 @@ func (s *ImportService) importFile(ctx context.Context, p modelAuth.Principal, j
 
 	var creds []modelImport.Credential
 	if job.Kind == modelImport.KindUsers {
-		if creds, err = s.prepareUsers(ctx, users); err != nil {
+		if creds, err = s.prepareUsers(ctx, batch.create); err != nil {
 			return 0, nil, nil, err
 		}
 	}
 
-	imported := len(users) + len(groups)
+	imported := batch.valid() + len(groups)
+	summary := modelImport.Summary{Created: len(batch.create) + len(groups)}
 	now := s.now().UTC()
 	err = s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
 		var after map[string]any
 		if job.Kind == modelImport.KindUsers {
-			ids, err := s.writeUsers(ctx, p.TenantID, users, now)
+			ids, err := s.writeUsers(ctx, p.TenantID, batch.create, now)
 			if err != nil {
 				return err
 			}
-			after = map[string]any{"kind": job.Kind, "created": len(ids), "user_ids": ids}
+			summary.AlreadyMember = batch.alreadyMember
+			if target.GroupID != "" && len(batch.addExisting) > 0 {
+				members := make([]modelGroup.GroupMemberEntity, len(batch.addExisting))
+				for i, id := range batch.addExisting {
+					members[i] = modelGroup.GroupMemberEntity{GroupID: target.GroupID, UserID: id, TenantID: p.TenantID, MemberRole: modelGroup.MemberRoleMember, JoinedAt: now}
+				}
+				n, err := s.storer.AddMembers(ctx, members)
+				if err != nil {
+					return err
+				}
+				// someone added by hand since validation counts as already a member
+				summary.Added, summary.AlreadyMember = int(n), summary.AlreadyMember+len(members)-int(n)
+			}
+			after = map[string]any{"kind": job.Kind, "target": target, "created": len(ids), "user_ids": ids,
+				"added": summary.Added, "added_user_ids": batch.addExisting, "already_member": summary.AlreadyMember}
 		} else {
 			if err := s.storer.CreateGroups(ctx, groups); err != nil {
 				return err
@@ -376,7 +439,8 @@ func (s *ImportService) importFile(ctx context.Context, p modelAuth.Principal, j
 			after = map[string]any{"kind": job.Kind, "created": len(ids), "group_ids": ids}
 		}
 		job.Status, job.OkRows, job.ErrorRows, job.FinishedAt = modelImport.StatusDone, imported, 0, &now
-		job.Errors = modelImport.EncodeErrors(nil)
+		job.Errors = modelImport.EncodeErrors(sortErrors(batch.warnings))
+		job.Summary = summary.Encode()
 		if err := s.storer.UpdateJob(ctx, &job.ImportJobEntity); err != nil {
 			return err
 		}
@@ -482,8 +546,9 @@ func (s *ImportService) writeUsers(ctx context.Context, tenantID string, plans [
 	return ids, nil
 }
 
-// validate checks headers and rows; it returns the number of valid rows.
-func (s *ImportService) validate(ctx context.Context, tenantID string, kind modelImport.Kind, sheet spreadsheet.Sheet) (int, []modelImport.RowError, error) {
+// validate checks headers and rows; it returns the number of valid rows, the errors
+// and the warnings.
+func (s *ImportService) validate(ctx context.Context, tenantID string, kind modelImport.Kind, target modelImport.Target, sheet spreadsheet.Sheet) (int, []modelImport.RowError, []modelImport.RowError, error) {
 	required := []string{colUsername, colFullName}
 	if kind == modelImport.KindGroups {
 		required = []string{colCode, colName, colKind}
@@ -495,18 +560,19 @@ func (s *ImportService) validate(ctx context.Context, tenantID string, kind mode
 		}
 	}
 	if len(missing) > 0 {
-		return 0, []modelImport.RowError{{Row: 0, Message: "missing columns: " + strings.Join(missing, ", ")}}, nil
+		return 0, []modelImport.RowError{{Row: 0, Message: "missing columns: " + strings.Join(missing, ", ")}}, nil, nil
 	}
 
 	var (
 		valid int
 		errs  []modelImport.RowError
+		warns []modelImport.RowError
 		err   error
 	)
 	if kind == modelImport.KindUsers {
-		var plans []userPlan
-		plans, errs, err = s.planUsers(ctx, tenantID, sheet.Rows)
-		valid = len(plans)
+		var batch userBatch
+		batch, errs, err = s.planUsers(ctx, tenantID, target, sheet.Rows)
+		valid, warns = batch.valid(), batch.warnings
 	} else {
 		var groups []modelGroup.GroupEntity
 		groups, errs, err = s.planGroups(ctx, tenantID, sheet.Rows)
@@ -515,7 +581,7 @@ func (s *ImportService) validate(ctx context.Context, tenantID string, kind mode
 			valid = len(groups)
 		}
 	}
-	return valid, sortErrors(errs), err
+	return valid, sortErrors(errs), warns, err
 }
 
 func (s *ImportService) findJob(ctx context.Context, p modelAuth.Principal, id string) (modelImport.JobRow, error) {
@@ -531,7 +597,7 @@ func (s *ImportService) findJob(ctx context.Context, p modelAuth.Principal, id s
 	if err != nil {
 		return modelImport.JobRow{}, err
 	}
-	if authorize(p, job.Kind) != nil {
+	if authorizeTarget(p, job.Kind, modelImport.DecodeTarget(job.Target)) != nil {
 		// do not reveal jobs of a kind the caller cannot manage
 		return modelImport.JobRow{}, errJobNotFound
 	}
@@ -553,6 +619,17 @@ func authorize(p modelAuth.Principal, kind modelImport.Kind) error {
 		return errUnsupportedKnd
 	}
 	return errr.ErrForbidden
+}
+
+// authorizeTarget adds group.manage for imports into a group (they change members).
+func authorizeTarget(p modelAuth.Principal, kind modelImport.Kind, t modelImport.Target) error {
+	if err := authorize(p, kind); err != nil {
+		return err
+	}
+	if t.GroupID != "" && !p.Has(modelAuth.PermGroupManage) {
+		return errr.ErrForbidden
+	}
+	return nil
 }
 
 // rowErrors collects RowError values.

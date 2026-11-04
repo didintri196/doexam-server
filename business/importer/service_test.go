@@ -39,6 +39,7 @@ type fakeStore struct {
 	users     []modelAuth.UserEntity
 	links     []modelAuth.UserRoleEntity
 	members   []modelGroup.GroupMemberEntity
+	accounts  []modelAuth.UserEntity // existing users, for imports into a group
 	audits    []string
 }
 
@@ -50,7 +51,9 @@ func newStore() *fakeStore {
 		emails:    []string{"Admin@Sekolah.id"},
 		extIDs:    []string{"999"},
 		roles: []modelAuth.RoleEntity{
-			{ID: "r-participant", Code: "participant"}, {ID: "r-author", Code: "author"},
+			{ID: "r-participant", Code: "participant", Permissions: modelAuth.TextArray{modelAuth.PermAttemptTake}},
+			{ID: "r-author", Code: "author", Permissions: modelAuth.TextArray{modelAuth.PermItemWrite}},
+			{ID: "r-admin", Code: "admin", Permissions: modelAuth.TextArray{modelAuth.PermTenantManage, modelAuth.PermUserManage}},
 		},
 		groups: []modelGroup.GroupEntity{
 			{ID: "g-x", Code: ptr("X"), Name: "Kelas X", Kind: "level", Period: ptr("2026/2027")},
@@ -168,6 +171,43 @@ func (f *fakeStore) CreateGroups(_ context.Context, g []modelGroup.GroupEntity) 
 	f.groups = append(f.groups, g...)
 	return nil
 }
+func (f *fakeStore) FindGroup(_ context.Context, id string) (modelGroup.GroupEntity, error) {
+	for _, g := range f.groups {
+		if g.ID == id {
+			return g, nil
+		}
+	}
+	return modelGroup.GroupEntity{}, errr.WithMessage(errr.ErrNotFound, "group not found")
+}
+func (f *fakeStore) UsersByLogin(_ context.Context, usernames, extIDs []string) ([]modelAuth.UserEntity, error) {
+	var out []modelAuth.UserEntity
+	for _, u := range f.accounts {
+		if slices.ContainsFunc(usernames, func(n string) bool { return strings.EqualFold(n, u.Username) }) ||
+			(u.ExternalID != nil && slices.Contains(extIDs, *u.ExternalID)) {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+func (f *fakeStore) GroupMemberIDs(_ context.Context, groupID string, ids []string) ([]string, error) {
+	var out []string
+	for _, m := range f.members {
+		if m.GroupID == groupID && slices.Contains(ids, m.UserID) {
+			out = append(out, m.UserID)
+		}
+	}
+	return out, nil
+}
+func (f *fakeStore) AddMembers(_ context.Context, m []modelGroup.GroupMemberEntity) (int64, error) {
+	var n int64
+	for _, x := range m {
+		if !slices.ContainsFunc(f.members, func(y modelGroup.GroupMemberEntity) bool { return y.GroupID == x.GroupID && y.UserID == x.UserID }) {
+			f.members = append(f.members, x)
+			n++
+		}
+	}
+	return n, nil
+}
 func (f *fakeStore) CreateAuditLog(_ context.Context, l *modelAudit.AuditLogEntity) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -202,7 +242,7 @@ func newService(t *testing.T, store *fakeStore) *ImportService {
 
 func upload(t *testing.T, svc *ImportService, kind modelImport.Kind, csv string) modelImport.JobDTO {
 	t.Helper()
-	dto, err := svc.Upload(context.Background(), adminP, kind, "data.csv", []byte(csv), modelAudit.Client{})
+	dto, err := svc.Upload(context.Background(), adminP, kind, modelImport.Target{}, "data.csv", []byte(csv), modelAudit.Client{})
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -333,7 +373,7 @@ func TestUploadRejectsBadFiles(t *testing.T) {
 		if name == "forbidden" {
 			p = groupsOnly
 		}
-		if _, err := svc.Upload(ctx, p, c.kind, c.name, []byte(c.data), modelAudit.Client{}); !errors.Is(err, c.want) {
+		if _, err := svc.Upload(ctx, p, c.kind, modelImport.Target{}, c.name, []byte(c.data), modelAudit.Client{}); !errors.Is(err, c.want) {
 			t.Errorf("%s: err = %v, want %v", name, err, c.want)
 		}
 	}
@@ -442,5 +482,144 @@ func TestEncodeErrorsCaps(t *testing.T) {
 	_ = json.Unmarshal(modelImport.EncodeErrors(errs), &decoded)
 	if len(decoded) != modelImport.MaxStoredErrors {
 		t.Fatalf("stored %d errors, want %d", len(decoded), modelImport.MaxStoredErrors)
+	}
+}
+
+func uploadTo(t *testing.T, svc *ImportService, target modelImport.Target, csv string) modelImport.JobDTO {
+	t.Helper()
+	dto, err := svc.Upload(context.Background(), adminP, modelImport.KindUsers, target, "data.csv", []byte(csv), modelAudit.Client{})
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	return dto
+}
+
+func hasWarning(errs []modelImport.RowError, row int, field string) bool {
+	return slices.ContainsFunc(errs, func(e modelImport.RowError) bool { return e.Row == row && e.Field == field && e.Warning })
+}
+
+func TestStaffImport(t *testing.T) {
+	store := newStore()
+	svc := newService(t, store)
+	staff := modelImport.Target{Audience: modelImport.AudienceStaff}
+
+	bad := uploadTo(t, svc, staff, "username,full_name,roles\nsri,Sri,\nbudi,Budi,participant\n")
+	if bad.Status != modelImport.StatusFailed || !hasError(bad.Errors, 2, colRoles, "required") || !hasError(bad.Errors, 3, colRoles, "Peserta page") {
+		t.Fatalf("staff errors = %+v", bad.Errors)
+	}
+
+	job := uploadTo(t, svc, staff, "username,full_name,roles,groups\nsri,Sri,author,X\nkepala,Kepala,admin,\n")
+	if job.Status != modelImport.StatusReady || job.Audience != modelImport.AudienceStaff {
+		t.Fatalf("staff job = %+v", job)
+	}
+	if !hasWarning(job.Errors, 2, colGroups) || !hasWarning(job.Errors, 3, colRoles) {
+		t.Fatalf("staff warnings = %+v", job.Errors)
+	}
+	done := commit(t, svc, job.ID)
+	if done.Status != modelImport.StatusDone || done.Summary.Created != 2 || len(store.members) != 0 {
+		t.Fatalf("done = %+v, members = %+v", done, store.members)
+	}
+}
+
+func TestParticipantImportForcesRole(t *testing.T) {
+	store := newStore()
+	svc := newService(t, store)
+	job := uploadTo(t, svc, modelImport.Target{Audience: modelImport.AudienceParticipant}, "username,full_name,roles,groups\nrina,Rina,admin,X\n")
+	if job.Status != modelImport.StatusReady || !hasWarning(job.Errors, 2, colRoles) {
+		t.Fatalf("job = %+v", job)
+	}
+	commit(t, svc, job.ID)
+	if len(store.links) != 1 || store.links[0].RoleID != "r-participant" || len(store.members) != 1 || store.members[0].GroupID != "g-x" {
+		t.Fatalf("links = %+v, members = %+v", store.links, store.members)
+	}
+}
+
+func TestGroupImportAddsExistingAccounts(t *testing.T) {
+	store := newStore()
+	store.accounts = []modelAuth.UserEntity{
+		{ID: "u-budi", Username: "budi", FullName: "Budi Santoso", ExternalID: ptr("0051"), Status: modelAuth.UserStatusActive},
+		{ID: "u-ayu", Username: "ayu", FullName: "Ayu", Status: modelAuth.UserStatusActive},
+		{ID: "u-off", Username: "lama", FullName: "Lama", Status: modelAuth.UserStatusSuspended},
+		{ID: "u-sri", Username: "sri", FullName: "Sri", ExternalID: ptr("0099"), Status: modelAuth.UserStatusActive},
+	}
+	store.usernames = append(store.usernames, "budi", "ayu", "lama", "sri")
+	store.extIDs = append(store.extIDs, "0051", "0099")
+	store.members = []modelGroup.GroupMemberEntity{{GroupID: "g-ipa1", UserID: "u-ayu"}}
+	svc := newService(t, store)
+	target := modelImport.Target{GroupID: "g-ipa1"}
+
+	// a suspended account and a username/external id pointing at two accounts are errors
+	bad, err := svc.Upload(context.Background(), adminP, modelImport.KindUsers, modelImport.Target{GroupID: "0192a000-0000-7000-8000-0000000000ff"}, "d.csv", []byte("username,full_name\nx,X\n"), modelAudit.Client{})
+	if !errr.IsNotFound(err) {
+		t.Fatalf("unknown group: %+v, %v", bad, err)
+	}
+	store.groups = append(store.groups, modelGroup.GroupEntity{ID: "0192a000-0000-7000-8000-0000000000aa", Code: ptr("G"), Kind: "class"})
+	target.GroupID = "0192a000-0000-7000-8000-0000000000aa"
+	store.members[0].GroupID = target.GroupID
+
+	job := uploadTo(t, svc, target, "username,full_name,external_id,groups\nlama,Lama,,\nbudi,Budi,0099,\n")
+	if job.Status != modelImport.StatusFailed || !hasError(job.Errors, 2, colUsername, "suspended") || !hasError(job.Errors, 3, colExternalID, "belongs to account sri") {
+		t.Fatalf("errors = %+v", job.Errors)
+	}
+
+	csv := "username,full_name,external_id,groups\n" +
+		"baru1,Peserta Baru,,X\n" + // new account, into the group (groups column ignored)
+		"budi,Budi S.,,\n" + // existing by username, different name → warning
+		"nomor-lain,Budi Santoso,0051,\n" + // same account by external id → duplicate member, skipped
+		"ayu,Ayu,,\n" // already a member
+	job = uploadTo(t, svc, target, csv)
+	if job.Status != modelImport.StatusReady || job.OkRows != 4 || job.GroupID == nil || job.Audience != modelImport.AudienceParticipant {
+		t.Fatalf("job = %+v", job)
+	}
+	if !hasWarning(job.Errors, 2, colGroups) || !hasWarning(job.Errors, 3, colFullName) {
+		t.Fatalf("warnings = %+v", job.Errors)
+	}
+	done := commit(t, svc, job.ID)
+	if done.Status != modelImport.StatusDone || done.Summary != (modelImport.Summary{Created: 1, Added: 1, AlreadyMember: 2}) {
+		t.Fatalf("done = %+v", done)
+	}
+	if len(store.users) != 1 || store.users[0].Username != "baru1" {
+		t.Fatalf("created = %+v", store.users)
+	}
+	inGroup := 0
+	for _, m := range store.members {
+		if m.GroupID == target.GroupID {
+			inGroup++
+		}
+	}
+	if inGroup != 3 { // ayu (before), baru1, budi
+		t.Fatalf("members of the group = %d (%+v)", inGroup, store.members)
+	}
+	creds, err := svc.Credentials(context.Background(), adminP, job.ID)
+	if err != nil || len(creds) != 1 || creds[0].Username != "baru1" {
+		t.Fatalf("credentials only for new accounts: %+v, %v", creds, err)
+	}
+}
+
+func TestImportTargetRules(t *testing.T) {
+	svc := newService(t, newStore())
+	ctx := context.Background()
+	usersOnly := modelAuth.Principal{TenantID: tenantID, Permissions: []string{modelAuth.PermUserManage}}
+	group := "0192a000-0000-7000-8000-0000000000aa"
+	tests := []struct {
+		name    string
+		p       modelAuth.Principal
+		kind    modelImport.Kind
+		target  modelImport.Target
+		wantErr error
+	}{
+		{"bad audience", adminP, modelImport.KindUsers, modelImport.Target{Audience: "teacher"}, errr.ErrInvalidInput},
+		{"group for staff", adminP, modelImport.KindUsers, modelImport.Target{Audience: modelImport.AudienceStaff, GroupID: group}, errr.ErrInvalidInput},
+		{"audience on group import", adminP, modelImport.KindGroups, modelImport.Target{Audience: modelImport.AudienceParticipant}, errr.ErrInvalidInput},
+		{"group import needs group.manage", usersOnly, modelImport.KindUsers, modelImport.Target{GroupID: group}, errr.ErrForbidden},
+		{"bad group id", adminP, modelImport.KindUsers, modelImport.Target{GroupID: "x"}, errr.ErrNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.Upload(ctx, tt.p, tt.kind, tt.target, "d.csv", []byte("username,full_name\nx,X\n"), modelAudit.Client{})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+		})
 	}
 }

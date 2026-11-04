@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
@@ -64,12 +65,24 @@ func (r *ImportRepo) FindJob(ctx context.Context, id string) (modelImport.JobRow
 }
 
 func (r *ImportRepo) ListJobs(ctx context.Context, kinds []modelImport.Kind, f modelImport.ListFilter) ([]modelImport.JobRow, int64, error) {
+	filter := func(q *gorm.DB, prefix string) *gorm.DB {
+		q = q.Where(prefix+"kind IN ?", kinds)
+		if f.Audience != "" {
+			q = q.Where(prefix+"target->>'audience' = ?", f.Audience)
+		}
+		if f.GroupID != "" {
+			q = q.Where(prefix+"target->>'group_id' = ?", f.GroupID)
+		} else if f.Audience != "" {
+			q = q.Where(prefix + "target->>'group_id' IS NULL") // the Peserta page lists its own imports, not group imports
+		}
+		return q
+	}
 	var total int64
-	if err := dbpg.Conn(ctx, r.db).Model(&modelImport.ImportJobEntity{}).Where("kind IN ?", kinds).Count(&total).Error; err != nil {
+	if err := filter(dbpg.Conn(ctx, r.db).Model(&modelImport.ImportJobEntity{}), "").Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count import jobs: %w", err)
 	}
 	rows := []modelImport.JobRow{}
-	err := r.jobQuery(ctx).Where("j.kind IN ?", kinds).Order("j.created_at DESC, j.id DESC").
+	err := filter(r.jobQuery(ctx), "j.").Order("j.created_at DESC, j.id DESC").
 		Limit(f.PerPage).Offset((f.Page - 1) * f.PerPage).Scan(&rows).Error
 	if err != nil {
 		return nil, 0, fmt.Errorf("list import jobs: %w", err)
@@ -79,7 +92,7 @@ func (r *ImportRepo) ListJobs(ctx context.Context, kinds []modelImport.Kind, f m
 
 func (r *ImportRepo) UpdateJob(ctx context.Context, j *modelImport.ImportJobEntity) error {
 	err := dbpg.Conn(ctx, r.db).Model(j).
-		Select("status", "total_rows", "ok_rows", "error_rows", "errors", "finished_at").
+		Select("status", "total_rows", "ok_rows", "error_rows", "errors", "summary", "finished_at").
 		Updates(j).Error
 	if err != nil {
 		return fmt.Errorf("update import job %s: %w", j.ID, err)
@@ -143,6 +156,62 @@ func (r *ImportRepo) GroupsByCodes(ctx context.Context, codes []string) ([]model
 		return nil, fmt.Errorf("groups by codes: %w", err)
 	}
 	return groups, nil
+}
+
+func (r *ImportRepo) FindGroup(ctx context.Context, id string) (modelGroup.GroupEntity, error) {
+	var g modelGroup.GroupEntity
+	err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&g).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return g, errr.WithMessage(errr.ErrNotFound, "group not found")
+	}
+	if err != nil {
+		return g, fmt.Errorf("find group %s: %w", id, err)
+	}
+	return g, nil
+}
+
+func (r *ImportRepo) UsersByLogin(ctx context.Context, usernames, externalIDs []string) ([]modelAuth.UserEntity, error) {
+	users := []modelAuth.UserEntity{}
+	if len(usernames) == 0 && len(externalIDs) == 0 {
+		return users, nil
+	}
+	q := dbpg.Conn(ctx, r.db).Model(&modelAuth.UserEntity{})
+	switch {
+	case len(usernames) > 0 && len(externalIDs) > 0:
+		q = q.Where("username IN ? OR external_id IN ?", usernames, externalIDs)
+	case len(usernames) > 0:
+		q = q.Where("username IN ?", usernames)
+	default:
+		q = q.Where("external_id IN ?", externalIDs)
+	}
+	if err := q.Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("users by login: %w", err)
+	}
+	return users, nil
+}
+
+func (r *ImportRepo) GroupMemberIDs(ctx context.Context, groupID string, userIDs []string) ([]string, error) {
+	ids := []string{}
+	if len(userIDs) == 0 {
+		return ids, nil
+	}
+	err := dbpg.Conn(ctx, r.db).Model(&modelGroup.GroupMemberEntity{}).
+		Where("group_id = ? AND user_id IN ?", groupID, userIDs).Pluck("user_id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("group member ids: %w", err)
+	}
+	return ids, nil
+}
+
+func (r *ImportRepo) AddMembers(ctx context.Context, members []modelGroup.GroupMemberEntity) (int64, error) {
+	if len(members) == 0 {
+		return 0, nil
+	}
+	res := dbpg.Conn(ctx, r.db).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&members, insertBatch)
+	if res.Error != nil {
+		return 0, fmt.Errorf("add group members: %w", res.Error)
+	}
+	return res.RowsAffected, nil
 }
 
 func (r *ImportRepo) CreateUsers(ctx context.Context, users []modelAuth.UserEntity) error {

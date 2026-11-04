@@ -43,7 +43,7 @@ func (h *ImportHandler) Template(c *fiber.Ctx) error {
 	return sendXLSX(c, fmt.Sprintf("template-impor-%s.xlsx", kind), buf.Bytes())
 }
 
-// Upload handles POST /api/v1/imports (multipart: kind, file).
+// Upload handles POST /api/v1/imports (multipart: kind, file, optional audience and group_id).
 func (h *ImportHandler) Upload(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
 
@@ -62,14 +62,15 @@ func (h *ImportHandler) Upload(c *fiber.Ctx) error {
 		return handleError(c, logger, "failed to read upload", err)
 	}
 
-	dto, err := h.importSvc.Upload(c.UserContext(), principal(c), modelImport.Kind(c.FormValue("kind")), fh.Filename, data, clientInfo(c))
+	target := modelImport.Target{Audience: modelImport.Audience(c.FormValue("audience")), GroupID: c.FormValue("group_id")}
+	dto, err := h.importSvc.Upload(c.UserContext(), principal(c), modelImport.Kind(c.FormValue("kind")), target, fh.Filename, data, clientInfo(c))
 	if err != nil {
 		return handleError(c, logger, "failed to upload import", err)
 	}
 	return SuccessResponse(c, fiber.StatusCreated, "import validated", dto)
 }
 
-// List handles GET /api/v1/imports?kind&page&per_page.
+// List handles GET /api/v1/imports?kind&audience&group_id&page&per_page.
 func (h *ImportHandler) List(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
 
@@ -78,7 +79,8 @@ func (h *ImportHandler) List(c *fiber.Ctx) error {
 		return handleError(c, logger, "invalid pagination", err)
 	}
 	jobs, total, err := h.importSvc.List(c.UserContext(), principal(c),
-		modelImport.ListFilter{Page: page, PerPage: perPage, Kind: modelImport.Kind(c.Query("kind"))})
+		modelImport.ListFilter{Page: page, PerPage: perPage, Kind: modelImport.Kind(c.Query("kind")),
+			Audience: modelImport.Audience(c.Query("audience")), GroupID: c.Query("group_id")})
 	if err != nil {
 		return handleError(c, logger, "failed to list imports", err)
 	}

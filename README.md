@@ -69,7 +69,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | POST | `/api/v1/auth/login` | Login `{username, password}` → token sesi. `tenant` (slug) hanya wajib bila instalasi melayani lebih dari satu institusi |
 | GET | `/api/v1/public/tenant` | Tanpa login, untuk layar login & header klien: nama, `tagline`, preset, locale, warna, `logo_url`. Query `tenant` opsional (wajib bila > 1 institusi). 404 `setup not completed` sebelum setup |
 | GET | `/api/v1/public/tenant/logo` | Tanpa login: file logo (PNG/JPEG/WebP), dengan `ETag` + cache 1 hari. Query `tenant` opsional |
-| GET | `/api/v1/public/templates/:name` | Tanpa login: templat impor sebagai file biasa (`template-impor-soal.docx`, `template-impor-users.xlsx`, `template-impor-groups.xlsx`), dengan `Content-Disposition` lengkap supaya nama & ekstensi benar di semua browser |
+| GET | `/api/v1/public/templates/:name` | Tanpa login: templat impor sebagai file biasa (`template-impor-soal.docx`, `template-impor-users.xlsx`, `template-impor-groups.xlsx`, `template-staf.xlsx`, `template-peserta.xlsx`, `template-peserta-grup.xlsx`), dengan `Content-Disposition` lengkap supaya nama & ekstensi benar di semua browser |
 | POST | `/api/v1/media` 🔒 `item.write` | Unggah gambar (PNG/JPEG/GIF/WebP ≤5 MB) atau audio (MP3/M4A/Ogg/WAV ≤20 MB) soal (multipart `file`; jenis dibaca dari isi; SVG dan video ditolak). File sama → id lama. → `{id, mime_type, size_bytes, width, height, url}`. Sisipkan di HTML sebagai `<img data-media-id="…">` |
 | POST | `/api/v1/media/links` 🔒 `item.read`/`item.write`/`exam.read`/`grade.write`/`report.read` | `{ids[≤500]}` → `{<id>: {url, mime, w, h}}`, link bertanda tangan untuk media di konten yang sedang dibuka. Id tak dikenal dilewati |
 | GET | `/api/v1/media/:id?t&e&s` | Tanpa login: isi file lewat link bertanda tangan (HMAC tenant+file+kedaluwarsa, ≥12 jam, berganti per jam). Link salah/kedaluwarsa → 404. `Cache-Control: private, immutable` |
@@ -164,8 +164,8 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET/POST | `/api/v1/exams/:id/analysis` 🔒 | Analisis butir CTT (p, daya beda, distraktor, KR-20/α, statistik & histogram nilai). GET = tersimpan (dihitung bila belum ada), POST = hitung ulang. Query: `session_id` |
 | GET | `/api/v1/attempts/:id/report` 🔒 | Laporan individu (staf): nilai per section & kompetensi, tiap soal dengan jawaban, kunci, waktu, kunjungan, pelanggaran |
 | GET | `/api/v1/imports/templates/:kind` 🔒 | Unduh template `.xlsx` (`users` / `groups`) |
-| POST | `/api/v1/imports` 🔒 | Unggah file (multipart `kind`, `file`) → divalidasi, status `ready`/`failed` + `errors` per baris |
-| GET | `/api/v1/imports` 🔒 | Riwayat impor. Query: `kind`, `page`, `per_page` |
+| POST | `/api/v1/imports` 🔒 | Unggah file (multipart `kind`, `file`, opsional `audience` = `staff`\|`participant` dan `group_id`) → divalidasi, status `ready`/`failed` + `errors` per baris (`warning: true` = peringatan, tidak menggagalkan). `staff`: kolom `roles` wajib, hanya peran staf. `participant`: semua baris berperan peserta. `group_id`: semua baris masuk grup itu; akun yang sudah ada (username/`external_id`) cukup ditambahkan ke grup, butuh juga `group.manage`. Hasil per jenis baris di `summary` (`created`, `added`, `already_member`) |
+| GET | `/api/v1/imports` 🔒 | Riwayat impor. Query: `kind`, `audience`, `group_id`, `page`, `per_page` (dengan `audience` tanpa `group_id`, impor ke grup tidak ikut) |
 | GET | `/api/v1/imports/:id` 🔒 | Status & laporan error impor |
 | POST | `/api/v1/imports/:id/commit` 🔒 | Jalankan impor (202, berjalan di latar belakang; pantau dengan GET) |
 | GET | `/api/v1/imports/:id/credentials` 🔒 | Unduh `.xlsx` password sementara. **Sekali saja**, maks 1 jam setelah selesai |
