@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +34,17 @@ type fakeStore struct {
 	created  []modelBank.ItemVersionEntity
 	updated  []modelBank.ItemVersionEntity
 	audits   []string
+	media    []string // media files of the tenant
+}
+
+func (f *fakeStore) ExistingMediaIDs(_ context.Context, ids []string) ([]string, error) {
+	var out []string
+	for _, id := range ids {
+		if slices.Contains(f.media, id) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeStore) FindBank(_ context.Context, id string) (modelBank.BankEntity, error) {
@@ -232,5 +245,34 @@ func TestItemDTOHasKeyAndExplanation(t *testing.T) {
 	var key modelBank.KeyTrueFalse
 	if json.Unmarshal(dto.Version.AnswerKey, &key) != nil || !key.Value || dto.Version.Explanation == nil {
 		t.Fatalf("dto = %+v", dto.Version)
+	}
+}
+
+func TestItemMediaMustExist(t *testing.T) {
+	known, unknown := "0192a000-0000-7000-8000-0000000000f1", "0192a000-0000-7000-8000-0000000000f2"
+	stem := func(id string) json.RawMessage {
+		return raw(`{"stem":"<p>Perhatikan gambar</p><img data-media-id=\"` + id + `\" alt=\"grafik\">"}`)
+	}
+	svc, store := newFixture(t, modelBank.AccessEditor, false)
+	store.media = []string{known}
+
+	_, err := svc.UpdateItem(context.Background(), authorP, itemID, modelBank.ItemUpdateInput{VersionInput: modelBank.VersionInput{Content: stem(unknown)}}, modelAudit.Client{})
+	var ve *errr.ValidationError
+	if !errors.As(err, &ve) || ve.Fields["content"] == "" {
+		t.Fatalf("unknown media: err = %v, want content error", err)
+	}
+	if len(store.updated) != 0 {
+		t.Fatal("nothing may be written")
+	}
+	dto, err := svc.UpdateItem(context.Background(), authorP, itemID, modelBank.ItemUpdateInput{VersionInput: modelBank.VersionInput{Content: stem(known)}}, modelAudit.Client{})
+	if err != nil {
+		t.Fatalf("known media: %v", err)
+	}
+	if !strings.Contains(string(dto.Version.Content), known) {
+		t.Fatalf("content lost the image: %s", dto.Version.Content)
+	}
+	bad := "<p>x</p>"
+	if _, err := svc.UpdateItem(context.Background(), authorP, itemID, modelBank.ItemUpdateInput{VersionInput: modelBank.VersionInput{Explanation: ptr(bad + `<img data-media-id="` + unknown + `">`)}}, modelAudit.Client{}); !errors.As(err, &ve) || ve.Fields["explanation"] == "" {
+		t.Fatalf("unknown media in explanation: err = %v", err)
 	}
 }

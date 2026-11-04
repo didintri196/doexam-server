@@ -2,6 +2,7 @@ package richtext
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -62,5 +63,16 @@ func TestPlainTextAndBlank(t *testing.T) {
 	}
 	if IsBlank(`<span data-math="x"></span>`) {
 		t.Fatal("a formula is not blank")
+	}
+}
+
+func TestMediaIDs(t *testing.T) {
+	a, b := "0192a000-0000-7000-8000-00000000000a", "0192a000-0000-7000-8000-00000000000b"
+	html := `<p>x<img data-media-id="` + a + `" alt="g"></p><img data-media-id="bad"><img data-media-id="` + b + `"><img data-media-id="` + a + `">`
+	if got := MediaIDs(html); !slices.Equal(got, []string{a, b}) {
+		t.Fatalf("got %v", got)
+	}
+	if got := MediaIDs(`<img data-media-id="`); got != nil {
+		t.Fatalf("truncated: %v", got)
 	}
 }

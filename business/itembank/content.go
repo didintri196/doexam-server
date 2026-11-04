@@ -2,6 +2,7 @@ package itembank
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -236,4 +237,30 @@ func mustJSON(v any) []byte {
 		panic(fmt.Sprintf("marshal canonical item body: %v", err)) // plain structs: unreachable
 	}
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+}
+
+// checkMedia rejects HTML (or JSON holding HTML) that points at media files the tenant
+// does not have, e.g. an id copied from another installation. Runs inside the tenant tx.
+func (s *ItemBankService) checkMedia(ctx context.Context, field string, docs ...string) error {
+	var ids []string
+	for _, d := range docs {
+		for _, id := range richtext.MediaIDs(strings.ReplaceAll(d, `\"`, `"`)) {
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	found, err := s.storer.ExistingMediaIDs(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if !slices.Contains(found, strings.ToLower(id)) && !slices.Contains(found, id) {
+			return &errr.ValidationError{Fields: map[string]string{field: "unknown media " + id}}
+		}
+	}
+	return nil
 }

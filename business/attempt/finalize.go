@@ -311,6 +311,15 @@ func (s *AttemptService) result(ctx context.Context, a modelAttempt.AttemptEntit
 		}
 		out.Items = append(out.Items, r)
 	}
+	var html []string
+	for _, r := range out.Items {
+		if r.Explanation != nil {
+			html = append(html, *r.Explanation)
+		}
+	}
+	if out.Media, err = s.mediaRefs(ctx, a.TenantID, html...); err != nil {
+		return out, err
+	}
 	return out, nil
 }
 

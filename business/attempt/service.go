@@ -76,6 +76,7 @@ type snapSection struct {
 type AttemptService struct {
 	storer AttemptStorer
 	tx     TxManager
+	media  MediaLinker // nil: no media links (tests)
 	now    func() time.Time
 	seed   func() int64
 	tracer trace.Tracer
@@ -83,8 +84,8 @@ type AttemptService struct {
 }
 
 // NewAttemptService returns a concrete AttemptService.
-func NewAttemptService(storer AttemptStorer, tx TxManager, logger *slog.Logger) *AttemptService {
-	return &AttemptService{storer: storer, tx: tx, now: time.Now, seed: randomSeed, tracer: otel.Tracer("doexam.service.attempt"), logger: logger}
+func NewAttemptService(storer AttemptStorer, tx TxManager, media MediaLinker, logger *slog.Logger) *AttemptService {
+	return &AttemptService{storer: storer, tx: tx, media: media, now: time.Now, seed: randomSeed, tracer: otel.Tracer("doexam.service.attempt"), logger: logger}
 }
 
 // Start begins an attempt for the caller in an open session, or resumes the running one.
