@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	modelTenant "doexam/models/tenant"
 	"time"
 
 	modelAudit "doexam/models/audit"
@@ -36,6 +37,10 @@ type SessionStorer interface {
 	AddParticipants(ctx context.Context, rows []modelSession.ParticipantEntity) (int64, error)
 	AddSessionGroups(ctx context.Context, rows []modelSession.SessionGroupEntity) error
 	ListParticipants(ctx context.Context, sessionID string, f modelSession.ParticipantFilter) ([]modelSession.ParticipantDTO, int64, error)
+	// PrintParticipants returns every participant with the status of their latest attempt.
+	PrintParticipants(ctx context.Context, sessionID string) ([]modelSession.PrintParticipantDTO, error)
+	// FindTenant reads the tenant row (name and settings for printed documents).
+	FindTenant(ctx context.Context, id string) (modelTenant.TenantEntity, error)
 	FindParticipant(ctx context.Context, sessionID, userID string) (modelSession.ParticipantEntity, error)
 	UpdateParticipant(ctx context.Context, p *modelSession.ParticipantEntity) error
 	DeleteParticipant(ctx context.Context, sessionID, userID string) error

@@ -78,11 +78,12 @@ type UpdateInput struct {
 	PrimaryColor *string `json:"primary_color"`
 	Tagline      *string `json:"tagline"`
 	Letterhead   *string `json:"letterhead"`
+	ExamRules    *string `json:"exam_rules"`
 }
 
 // Normalize trims every field.
 func (in *UpdateInput) Normalize() {
-	for _, f := range []*string{in.Name, in.Timezone, in.Locale, in.PrimaryColor, in.Tagline, in.Letterhead} {
+	for _, f := range []*string{in.Name, in.Timezone, in.Locale, in.PrimaryColor, in.Tagline, in.Letterhead, in.ExamRules} {
 		if f != nil {
 			*f = strings.TrimSpace(*f)
 		}
@@ -109,6 +110,7 @@ type SettingsDTO struct {
 	PrimaryColor *string `json:"primary_color"`
 	Tagline      string  `json:"tagline"`
 	Letterhead   string  `json:"letterhead"`
+	ExamRules    string  `json:"exam_rules"`
 	LogoURL      *string `json:"logo_url"`
 }
 
@@ -146,7 +148,7 @@ func ToDTO(e TenantEntity) TenantDTO {
 		ID: e.ID, Slug: e.Slug, Name: e.Name, Preset: e.Preset, IsActive: e.IsActive,
 		Settings: SettingsDTO{
 			Timezone: orDefault(s.Timezone, DefaultTimezone), Locale: orDefault(s.Locale, DefaultLocale),
-			PrimaryColor: nonEmpty(s.PrimaryColor), Tagline: s.Tagline, Letterhead: s.Letterhead, LogoURL: LogoURL(e.Slug, s.LogoFileID),
+			PrimaryColor: nonEmpty(s.PrimaryColor), Tagline: s.Tagline, Letterhead: s.Letterhead, ExamRules: s.ExamRules, LogoURL: LogoURL(e.Slug, s.LogoFileID),
 		},
 	}
 }

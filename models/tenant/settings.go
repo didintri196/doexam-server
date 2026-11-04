@@ -17,6 +17,7 @@ const (
 	MaxNameLen       = 200
 	MaxLetterheadLen = 500
 	MaxTaglineLen    = 100
+	MaxExamRulesLen  = 5000
 	MaxLogoBytes     = 1 << 20 // 1 MiB
 )
 
@@ -42,6 +43,7 @@ type Settings struct {
 	Tagline      string `json:"tagline,omitempty"`       // plain text under the name in the clients' header
 	Letterhead   string `json:"letterhead,omitempty"`    // plain text for exam cards and printed reports
 	LogoFileID   string `json:"logo_file_id,omitempty"`  // media_files.id
+	ExamRules    string `json:"exam_rules,omitempty"`    // plain text: rules printed on the proctor sheet
 }
 
 // DecodeSettings parses tenants.settings; unknown or malformed content yields zero settings.

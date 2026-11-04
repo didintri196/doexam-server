@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	modelTenant "doexam/models/tenant"
 	"errors"
 	"fmt"
 	"time"
@@ -245,6 +246,25 @@ func (r *SessionRepo) ListParticipants(ctx context.Context, sessionID string, f 
 		Select("sp.user_id, u.username, u.full_name, u.external_id, sp.extra_time_minutes, sp.attendance, sp.seat, sp.notes, sp.added_at").
 		Order("u.full_name, u.id").Limit(f.PerPage).Offset((f.Page - 1) * f.PerPage).Scan(&out).Error
 	return out, total, wrap(err, "list participants")
+}
+
+func (r *SessionRepo) PrintParticipants(ctx context.Context, sessionID string) ([]modelSession.PrintParticipantDTO, error) {
+	out := []modelSession.PrintParticipantDTO{}
+	err := dbpg.Conn(ctx, r.db).Table("exam_session_participants sp").
+		Joins("JOIN users u ON u.id = sp.user_id").Where("sp.session_id = ?", sessionID).
+		Select(`sp.user_id, u.username, u.full_name, u.external_id, sp.seat, sp.attendance,
+			(SELECT a.status FROM attempts a WHERE a.session_id = sp.session_id AND a.user_id = sp.user_id
+			 ORDER BY a.started_at DESC LIMIT 1) AS attempt_status`).
+		// seats sort naturally ("2" before "10"); participants without a seat come last
+		Order("sp.seat IS NULL, length(sp.seat), sp.seat, u.full_name, u.id").
+		Scan(&out).Error
+	return out, wrap(err, "print participants")
+}
+
+func (r *SessionRepo) FindTenant(ctx context.Context, id string) (modelTenant.TenantEntity, error) {
+	var t modelTenant.TenantEntity
+	err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&t).Error
+	return t, wrap(err, "find tenant")
 }
 
 func (r *SessionRepo) FindParticipant(ctx context.Context, sessionID, userID string) (modelSession.ParticipantEntity, error) {

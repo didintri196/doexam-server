@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	modelTenant "doexam/models/tenant"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -112,6 +113,66 @@ func (s *SessionService) Get(ctx context.Context, p modelAuth.Principal, id stri
 		return modelSession.SessionDTO{}, fail(span, err)
 	}
 	return out, nil
+}
+
+// Print returns what the session documents need: participant cards, attendance list,
+// minutes and the proctor sheet (session managers and the session's proctors).
+func (s *SessionService) Print(ctx context.Context, p modelAuth.Principal, id string) (modelSession.PrintDTO, error) {
+	ctx, span := s.tracer.Start(ctx, "SessionService.Print", trace.WithAttributes(attribute.String("session.id", id)))
+	defer span.End()
+
+	var out modelSession.PrintDTO
+	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
+		sess, r, err := s.load(ctx, p, id, false)
+		if err != nil {
+			return err
+		}
+		if out.Session, err = s.detail(ctx, sess, r); err != nil {
+			return err
+		}
+		if out.Participants, err = s.storer.PrintParticipants(ctx, id); err != nil {
+			return err
+		}
+		t, err := s.storer.FindTenant(ctx, p.TenantID)
+		if err != nil {
+			return err
+		}
+		st := modelTenant.DecodeSettings(t.Settings)
+		out.Institution = modelSession.InstitutionDTO{
+			Name: t.Name, Letterhead: st.Letterhead, ExamRules: st.ExamRules, LogoURL: modelTenant.LogoURL(t.Slug, st.LogoFileID),
+		}
+		return nil
+	})
+	if err != nil {
+		return modelSession.PrintDTO{}, fail(span, err)
+	}
+	out.Stats = printStats(out.Participants)
+	out.GeneratedAt = s.now().UTC()
+	return out, nil
+}
+
+// printStats counts attendance for the minutes. Someone who started an attempt was
+// present even if the proctor did not tick the attendance list.
+func printStats(ps []modelSession.PrintParticipantDTO) modelSession.PrintStatsDTO {
+	st := modelSession.PrintStatsDTO{Registered: len(ps)}
+	for _, p := range ps {
+		started := p.AttemptStatus != nil
+		if started {
+			st.Started++
+			if *p.AttemptStatus == "submitted" || *p.AttemptStatus == "graded" {
+				st.Submitted++
+			}
+		}
+		switch {
+		case p.Attendance == modelSession.AttendancePresent || started:
+			st.Present++
+		case p.Attendance == modelSession.AttendanceAbsent:
+			st.Absent++
+		case p.Attendance == modelSession.AttendanceExcused:
+			st.Excused++
+		}
+	}
+	return st
 }
 
 // Create schedules a session for a published exam.

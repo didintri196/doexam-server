@@ -56,6 +56,7 @@ func (s *TenantService) Update(ctx context.Context, p modelAuth.Principal, in mo
 		set(&st.PrimaryColor, in.PrimaryColor)
 		set(&st.Tagline, in.Tagline)
 		set(&st.Letterhead, in.Letterhead)
+		set(&st.ExamRules, in.ExamRules)
 		if name == t.Name && st == before {
 			updated = t
 			return nil // nothing changed: no write, no audit entry
@@ -265,6 +266,10 @@ func validateUpdate(in modelTenant.UpdateInput) error {
 	if in.Letterhead != nil {
 		v.Check(utf8.RuneCountInString(*in.Letterhead) <= modelTenant.MaxLetterheadLen, "letterhead",
 			fmt.Sprintf("max %d chars", modelTenant.MaxLetterheadLen))
+	}
+	if in.ExamRules != nil {
+		v.Check(utf8.RuneCountInString(*in.ExamRules) <= modelTenant.MaxExamRulesLen, "exam_rules",
+			fmt.Sprintf("max %d chars", modelTenant.MaxExamRulesLen))
 	}
 	return v.Err()
 }

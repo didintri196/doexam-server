@@ -147,6 +147,44 @@ type ParticipantDTO struct {
 	AddedAt          time.Time  `json:"added_at"`
 }
 
+// PrintParticipantDTO is one participant on the printed documents.
+type PrintParticipantDTO struct {
+	UserID        string     `json:"user_id"`
+	Username      string     `json:"username"`
+	FullName      string     `json:"full_name"`
+	ExternalID    *string    `json:"external_id"`
+	Seat          *string    `json:"seat"`
+	Attendance    Attendance `json:"attendance"`
+	AttemptStatus *string    `json:"attempt_status"` // latest attempt in this session, if any
+}
+
+// PrintStatsDTO sums up a session for the minutes (berita acara).
+type PrintStatsDTO struct {
+	Registered int `json:"registered"`
+	Present    int `json:"present"` // attendance present, or started an attempt
+	Absent     int `json:"absent"`
+	Excused    int `json:"excused"`
+	Started    int `json:"started"`   // has an attempt
+	Submitted  int `json:"submitted"` // attempt submitted or graded
+}
+
+// InstitutionDTO is what the printed documents show of the institution.
+type InstitutionDTO struct {
+	Name       string  `json:"name"`
+	Letterhead string  `json:"letterhead"`
+	ExamRules  string  `json:"exam_rules"`
+	LogoURL    *string `json:"logo_url"`
+}
+
+// PrintDTO is GET /api/v1/sessions/:id/print: everything the session documents need.
+type PrintDTO struct {
+	Session      SessionDTO            `json:"session"`
+	Institution  InstitutionDTO        `json:"institution"`
+	Participants []PrintParticipantDTO `json:"participants"` // by seat, then name
+	Stats        PrintStatsDTO         `json:"stats"`
+	GeneratedAt  time.Time             `json:"generated_at"`
+}
+
 // AddResultDTO reports POST /sessions/:id/participants.
 type AddResultDTO struct {
 	Added   int `json:"added"`   // new participants

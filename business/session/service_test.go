@@ -369,3 +369,21 @@ func fieldsOf(err error) map[string]string {
 	}
 	return map[string]string{}
 }
+
+func TestPrintStats(t *testing.T) {
+	st := func(s string) *string { return &s }
+	ps := []modelSession.PrintParticipantDTO{
+		{Attendance: modelSession.AttendancePresent},                                    // ticked, not started
+		{Attendance: modelSession.AttendanceExpected, AttemptStatus: st("in_progress")}, // started without the tick
+		{Attendance: modelSession.AttendanceExpected, AttemptStatus: st("submitted")},
+		{Attendance: modelSession.AttendancePresent, AttemptStatus: st("graded")},
+		{Attendance: modelSession.AttendanceAbsent},
+		{Attendance: modelSession.AttendanceExcused},
+		{Attendance: modelSession.AttendanceExpected}, // unknown yet
+	}
+	got := printStats(ps)
+	want := modelSession.PrintStatsDTO{Registered: 7, Present: 4, Absent: 1, Excused: 1, Started: 3, Submitted: 2}
+	if got != want {
+		t.Fatalf("stats = %+v, want %+v", got, want)
+	}
+}
