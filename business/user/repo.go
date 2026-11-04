@@ -115,6 +115,20 @@ func (r *UserRepo) List(ctx context.Context, f modelUser.ListFilter) ([]modelAut
 	return users, total, nil
 }
 
+func (r *UserRepo) FindByIdentifiers(ctx context.Context, keys []string) ([]modelAuth.UserEntity, error) {
+	var users []modelAuth.UserEntity
+	if len(keys) == 0 {
+		return users, nil
+	}
+	err := dbpg.Conn(ctx, r.db).
+		Where("lower(username::text) IN ? OR lower(external_id) IN ? OR lower(email::text) IN ?", keys, keys, keys).
+		Find(&users).Error
+	if err != nil {
+		return nil, fmt.Errorf("find users by identifiers: %w", err)
+	}
+	return users, nil
+}
+
 func (r *UserRepo) FindByID(ctx context.Context, id string) (modelAuth.UserEntity, error) {
 	var u modelAuth.UserEntity
 	if err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&u).Error; err != nil {

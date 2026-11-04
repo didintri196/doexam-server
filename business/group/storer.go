@@ -25,8 +25,14 @@ type GroupStorer interface {
 	// ExistingUserIDs returns which of ids are users (not deleted) of the tenant.
 	ExistingUserIDs(ctx context.Context, ids []string) ([]string, error)
 	UpsertMembers(ctx context.Context, members []modelGroup.GroupMemberEntity) error
+	// InsertMissingMembers adds members that are not in the group yet; existing ones are untouched.
+	InsertMissingMembers(ctx context.Context, members []modelGroup.GroupMemberEntity) error
+	// MemberUserIDs returns the user ids of all members of groupID.
+	MemberUserIDs(ctx context.Context, groupID string) ([]string, error)
 	// RemoveMember reports whether a membership was deleted.
 	RemoveMember(ctx context.Context, groupID, userID string) (bool, error)
+	// RemoveMembers deletes the memberships of userIDs in groupID and returns how many.
+	RemoveMembers(ctx context.Context, groupID string, userIDs []string) (int64, error)
 
 	CreateAuditLog(ctx context.Context, log *modelAudit.AuditLogEntity) error
 }

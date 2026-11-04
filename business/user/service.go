@@ -29,7 +29,8 @@ var (
 	errLastAdmin    = errr.WithMessage(errr.ErrForbidden, "tenant must keep at least one active admin")
 )
 
-// UserService manages the users of a tenant. Every method requires user.manage.
+// UserService manages the users of a tenant. Every method requires user.manage, except
+// Resolve/ResolveFile (also group.manage or session.manage).
 type UserService struct {
 	storer UserStorer
 	tx     TxManager

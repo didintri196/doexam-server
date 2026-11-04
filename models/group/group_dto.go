@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-// MaxMembersPerRequest bounds POST /groups/:id/members.
-const MaxMembersPerRequest = 500
+// MaxMembersPerRequest bounds the users added (user_ids plus the members copied with
+// from_group_id) or removed in one request.
+const MaxMembersPerRequest = 5000
 
 // RootParent is the parent_id filter value that selects top-level groups.
 const RootParent = "root"
@@ -43,8 +44,25 @@ type UpdateInput struct {
 // AddMembersInput is the body of POST /api/v1/groups/:id/members.
 // Existing members get their member_role updated.
 type AddMembersInput struct {
-	UserIDs    []string   `json:"user_ids"`
-	MemberRole MemberRole `json:"member_role"` // default: member
+	UserIDs     []string   `json:"user_ids"`
+	FromGroupID *string    `json:"from_group_id"` // also add every member of this group
+	MemberRole  MemberRole `json:"member_role"`   // default: member
+}
+
+// RemoveMembersInput is the body of POST /api/v1/groups/:id/members/remove.
+type RemoveMembersInput struct {
+	UserIDs []string `json:"user_ids"`
+}
+
+// AddResultDTO reports how many users were requested to be added (user_ids plus copied
+// members). Users who were already members are included.
+type AddResultDTO struct {
+	Requested int `json:"requested"`
+}
+
+// RemoveResultDTO reports how many memberships were deleted.
+type RemoveResultDTO struct {
+	Removed int64 `json:"removed"`
 }
 
 // MemberFilter pages GET /api/v1/groups/:id/members.

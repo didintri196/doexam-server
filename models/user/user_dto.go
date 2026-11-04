@@ -167,3 +167,43 @@ func normalizeCodes(codes []string) []string {
 	}
 	return out
 }
+
+// MaxResolveIdentifiers bounds POST /api/v1/users/resolve and /resolve-file.
+const MaxResolveIdentifiers = 5000
+
+// MaxResolveFileBytes bounds the file of POST /api/v1/users/resolve-file.
+const MaxResolveFileBytes = 5 << 20
+
+// ResolveInput is the body of POST /api/v1/users/resolve: usernames, external ids
+// (ID peserta) or e-mails, e.g. one column pasted from a spreadsheet.
+type ResolveInput struct {
+	Identifiers []string `json:"identifiers"`
+}
+
+// MatchField names the user field an identifier matched.
+type MatchField string
+
+const (
+	MatchUsername   MatchField = "username"
+	MatchExternalID MatchField = "external_id"
+	MatchEmail      MatchField = "email"
+)
+
+// ResolvedUserDTO is a user found for one identifier. E-mail is not echoed back.
+type ResolvedUserDTO struct {
+	ID         string               `json:"id"`
+	Username   string               `json:"username"`
+	FullName   string               `json:"full_name"`
+	ExternalID *string              `json:"external_id"`
+	Status     modelAuth.UserStatus `json:"status"`
+	Input      string               `json:"input"`      // the identifier as given
+	MatchedBy  MatchField           `json:"matched_by"` // which field matched
+}
+
+// ResolveResultDTO splits the identifiers into found users (one per user, in input
+// order), identifiers with no user, and identifiers that match more than one user.
+type ResolveResultDTO struct {
+	Found     []ResolvedUserDTO `json:"found"`
+	NotFound  []string          `json:"not_found"`
+	Ambiguous []string          `json:"ambiguous"`
+}

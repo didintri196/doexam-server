@@ -266,59 +266,134 @@ func (s *GroupService) ListMembers(ctx context.Context, p modelAuth.Principal, g
 	return out, total, err
 }
 
-// AddMembers adds users to a group (up to MaxMembersPerRequest per call).
-// Users already in the group get their member_role updated.
-func (s *GroupService) AddMembers(ctx context.Context, p modelAuth.Principal, groupID string, in modelGroup.AddMembersInput, client modelAudit.Client) error {
+// AddMembers adds users to a group: user_ids and, with from_group_id, every member of
+// another group (up to MaxMembersPerRequest users in total). Users listed in user_ids that
+// are already members get their member_role updated; copied members that are already in
+// the group keep their role.
+func (s *GroupService) AddMembers(ctx context.Context, p modelAuth.Principal, groupID string, in modelGroup.AddMembersInput, client modelAudit.Client) (modelGroup.AddResultDTO, error) {
 	ctx, span := s.tracer.Start(ctx, "GroupService.AddMembers", trace.WithAttributes(attribute.String("group.id", groupID)))
 	defer span.End()
 
 	if uuid.Validate(groupID) != nil {
-		return errGroupNotFound
+		return modelGroup.AddResultDTO{}, errGroupNotFound
 	}
 	if in.MemberRole == "" {
 		in.MemberRole = modelGroup.MemberRoleMember
+	}
+	from := ""
+	if in.FromGroupID != nil {
+		from = strings.ToLower(strings.TrimSpace(*in.FromGroupID))
+	}
+	ids := dedupe(in.UserIDs)
+	v := errr.Validation{}
+	v.Check(len(ids) > 0 || from != "", "user_ids", "give user_ids and/or from_group_id")
+	v.Check(len(ids) <= modelGroup.MaxMembersPerRequest, "user_ids",
+		fmt.Sprintf("max %d user ids", modelGroup.MaxMembersPerRequest))
+	v.Check(!slices.ContainsFunc(ids, func(id string) bool { return uuid.Validate(id) != nil }), "user_ids", "must be UUIDs")
+	v.Check(from == "" || uuid.Validate(from) == nil, "from_group_id", "must be a UUID")
+	v.Check(from != groupID, "from_group_id", "must be another group")
+	v.Check(in.MemberRole == modelGroup.MemberRoleMember || in.MemberRole == modelGroup.MemberRoleLeader,
+		"member_role", "must be member or leader")
+	if err := v.Err(); err != nil {
+		return modelGroup.AddResultDTO{}, fail(span, err)
+	}
+
+	var out modelGroup.AddResultDTO
+	err := s.run(ctx, span, p, []string{modelAuth.PermGroupManage}, func(ctx context.Context) error {
+		if _, err := s.storer.FindByID(ctx, groupID); err != nil {
+			return err
+		}
+		var copied []string
+		if from != "" {
+			if _, err := s.storer.FindByID(ctx, from); err != nil {
+				if errors.Is(err, errr.ErrNotFound) {
+					return &errr.ValidationError{Fields: map[string]string{"from_group_id": "group not found"}}
+				}
+				return err
+			}
+			srcIDs, err := s.storer.MemberUserIDs(ctx, from)
+			if err != nil {
+				return err
+			}
+			copied = diff(srcIDs, ids)
+		}
+		if len(ids)+len(copied) > modelGroup.MaxMembersPerRequest {
+			return &errr.ValidationError{Fields: map[string]string{"from_group_id": fmt.Sprintf("max %d users per request", modelGroup.MaxMembersPerRequest)}}
+		}
+		if len(ids) > 0 {
+			found, err := s.storer.ExistingUserIDs(ctx, ids)
+			if err != nil {
+				return err
+			}
+			if missing := diff(ids, found); len(missing) > 0 {
+				if len(missing) > 5 {
+					missing = append(missing[:5], "...")
+				}
+				return &errr.ValidationError{Fields: map[string]string{"user_ids": "unknown users: " + strings.Join(missing, ", ")}}
+			}
+		}
+		now := s.now().UTC()
+		rows := func(uids []string) []modelGroup.GroupMemberEntity {
+			out := make([]modelGroup.GroupMemberEntity, len(uids))
+			for i, uid := range uids {
+				out[i] = modelGroup.GroupMemberEntity{GroupID: groupID, UserID: uid, TenantID: p.TenantID, MemberRole: in.MemberRole, JoinedAt: now}
+			}
+			return out
+		}
+		if err := s.storer.UpsertMembers(ctx, rows(ids)); err != nil {
+			return err
+		}
+		if err := s.storer.InsertMissingMembers(ctx, rows(copied)); err != nil {
+			return err
+		}
+		out = modelGroup.AddResultDTO{Requested: len(ids) + len(copied)}
+		after := map[string]any{"user_ids": ids, "member_role": in.MemberRole}
+		if from != "" {
+			after["from_group_id"] = from
+			after["copied"] = len(copied)
+		}
+		return s.storer.CreateAuditLog(ctx, modelAudit.New(modelAudit.Entry{
+			TenantID: p.TenantID, ActorID: p.UserID, Action: modelAudit.ActionGroupMemberAdd,
+			EntityType: "group", EntityID: groupID, Client: client, After: after,
+		}))
+	})
+	return out, err
+}
+
+// RemoveMembers removes up to MaxMembersPerRequest users from a group at once.
+func (s *GroupService) RemoveMembers(ctx context.Context, p modelAuth.Principal, groupID string, in modelGroup.RemoveMembersInput, client modelAudit.Client) (modelGroup.RemoveResultDTO, error) {
+	ctx, span := s.tracer.Start(ctx, "GroupService.RemoveMembers", trace.WithAttributes(attribute.String("group.id", groupID)))
+	defer span.End()
+
+	if uuid.Validate(groupID) != nil {
+		return modelGroup.RemoveResultDTO{}, errGroupNotFound
 	}
 	ids := dedupe(in.UserIDs)
 	v := errr.Validation{}
 	v.Check(len(ids) > 0 && len(ids) <= modelGroup.MaxMembersPerRequest, "user_ids",
 		fmt.Sprintf("1-%d user ids", modelGroup.MaxMembersPerRequest))
 	v.Check(!slices.ContainsFunc(ids, func(id string) bool { return uuid.Validate(id) != nil }), "user_ids", "must be UUIDs")
-	v.Check(in.MemberRole == modelGroup.MemberRoleMember || in.MemberRole == modelGroup.MemberRoleLeader,
-		"member_role", "must be member or leader")
 	if err := v.Err(); err != nil {
-		return fail(span, err)
+		return modelGroup.RemoveResultDTO{}, fail(span, err)
 	}
 
-	return s.run(ctx, span, p, []string{modelAuth.PermGroupManage}, func(ctx context.Context) error {
+	var out modelGroup.RemoveResultDTO
+	err := s.run(ctx, span, p, []string{modelAuth.PermGroupManage}, func(ctx context.Context) error {
 		if _, err := s.storer.FindByID(ctx, groupID); err != nil {
 			return err
 		}
-		found, err := s.storer.ExistingUserIDs(ctx, ids)
+		n, err := s.storer.RemoveMembers(ctx, groupID, ids)
 		if err != nil {
 			return err
 		}
-		if missing := diff(ids, found); len(missing) > 0 {
-			if len(missing) > 5 {
-				missing = append(missing[:5], "...")
-			}
-			return &errr.ValidationError{Fields: map[string]string{"user_ids": "unknown users: " + strings.Join(missing, ", ")}}
-		}
-		now := s.now().UTC()
-		members := make([]modelGroup.GroupMemberEntity, len(ids))
-		for i, uid := range ids {
-			members[i] = modelGroup.GroupMemberEntity{
-				GroupID: groupID, UserID: uid, TenantID: p.TenantID, MemberRole: in.MemberRole, JoinedAt: now,
-			}
-		}
-		if err := s.storer.UpsertMembers(ctx, members); err != nil {
-			return err
-		}
+		out.Removed = n
 		return s.storer.CreateAuditLog(ctx, modelAudit.New(modelAudit.Entry{
-			TenantID: p.TenantID, ActorID: p.UserID, Action: modelAudit.ActionGroupMemberAdd,
+			TenantID: p.TenantID, ActorID: p.UserID, Action: modelAudit.ActionGroupMemberRemove,
 			EntityType: "group", EntityID: groupID, Client: client,
-			After: map[string]any{"user_ids": ids, "member_role": in.MemberRole},
+			Before: map[string]any{"user_ids": ids, "removed": n},
 		}))
 	})
+	return out, err
 }
 
 // RemoveMember removes one user from a group.
