@@ -2,11 +2,11 @@ package session
 
 import (
 	"context"
-	modelTenant "doexam/models/tenant"
 	"time"
 
 	modelAudit "doexam/models/audit"
 	modelSession "doexam/models/session"
+	modelTenant "doexam/models/tenant"
 )
 
 // SessionStorer is the persistence port for exam sessions. Every method must run inside TxManager.WithTenant.
@@ -71,6 +71,11 @@ type PasswordHasher interface {
 // TxManager runs fn inside a transaction scoped to tenantID.
 type TxManager interface {
 	WithTenant(ctx context.Context, tenantID string, fn func(ctx context.Context) error) error
+}
+
+// LinkSigner makes signed, expiring media links (pkg/mediaurl), used for the card signature image.
+type LinkSigner interface {
+	Path(prefix, tenantID, fileID string, now time.Time) string
 }
 
 // AttemptFinalizer submits the running attempts of a session. It runs inside the caller's

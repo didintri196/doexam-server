@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"time"
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
@@ -42,6 +43,12 @@ type FileStore interface {
 // TxManager runs fn inside a transaction scoped to tenantID.
 type TxManager interface {
 	WithTenant(ctx context.Context, tenantID string, fn func(ctx context.Context) error) error
+}
+
+// LinkSigner makes signed, expiring media links (pkg/mediaurl), used for the card
+// signature image, which must not be public like the logo.
+type LinkSigner interface {
+	Path(prefix, tenantID, fileID string, now time.Time) string
 }
 
 // PasswordHasher hashes passwords.

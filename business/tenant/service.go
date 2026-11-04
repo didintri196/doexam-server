@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -13,6 +14,7 @@ import (
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
+	modelMedia "doexam/models/media"
 	modelTenant "doexam/models/tenant"
 	"doexam/pkg/errr"
 )
@@ -23,17 +25,21 @@ type TenantService struct {
 	tx     TxManager
 	hasher PasswordHasher
 	files  FileStore
+	links  LinkSigner
+	now    func() time.Time
 	tracer trace.Tracer
 	logger *slog.Logger
 }
 
 // NewTenantService returns a concrete TenantService.
-func NewTenantService(storer TenantStorer, tx TxManager, hasher PasswordHasher, files FileStore, logger *slog.Logger) *TenantService {
+func NewTenantService(storer TenantStorer, tx TxManager, hasher PasswordHasher, files FileStore, links LinkSigner, logger *slog.Logger) *TenantService {
 	return &TenantService{
 		storer: storer,
 		tx:     tx,
 		hasher: hasher,
 		files:  files,
+		links:  links,
+		now:    time.Now,
 		tracer: otel.Tracer("doexam.service.tenant"),
 		logger: logger,
 	}
@@ -125,7 +131,7 @@ func (s *TenantService) setup(ctx context.Context, in modelTenant.SetupInput) (m
 	}
 
 	var dto modelTenant.SetupDTO
-	dto.Tenant = modelTenant.ToDTO(tenant)
+	dto.Tenant = s.toDTO(tenant)
 	dto.Admin.ID = admin.ID
 	dto.Admin.Username = admin.Username
 	return dto, nil
@@ -145,7 +151,7 @@ func (s *TenantService) Current(ctx context.Context, p modelAuth.Principal) (mod
 		span.RecordError(err)
 		return modelTenant.TenantDTO{}, err
 	}
-	return modelTenant.ToDTO(t), nil
+	return s.toDTO(t), nil
 }
 
 func validateSetup(in modelTenant.SetupInput) error {
@@ -171,4 +177,20 @@ func fail(span trace.Span, err error) error {
 // newID returns a UUIDv7 (time-ordered, index friendly).
 func newID() string {
 	return uuid.Must(uuid.NewV7()).String()
+}
+
+// toDTO converts t and signs the link to the card signature image.
+func (s *TenantService) toDTO(t modelTenant.TenantEntity) modelTenant.TenantDTO {
+	dto := modelTenant.ToDTO(t)
+	dto.Settings.Card.SignatureURL = s.SignatureURL(t.ID, modelTenant.DecodeSettings(t.Settings).Card.SignatureFileID)
+	return dto
+}
+
+// SignatureURL is the signed link to a card signature image, or nil when none is set.
+func (s *TenantService) SignatureURL(tenantID, fileID string) *string {
+	if fileID == "" {
+		return nil
+	}
+	u := s.links.Path(modelMedia.URLPrefix, tenantID, fileID, s.now())
+	return &u
 }

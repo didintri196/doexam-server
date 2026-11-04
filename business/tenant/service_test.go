@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
@@ -120,6 +121,13 @@ func (f *fakeTx) WithTenant(ctx context.Context, id string, fn func(context.Cont
 	return fn(ctx)
 }
 
+// fakeSigner makes predictable "signed" links.
+type fakeSigner struct{}
+
+func (fakeSigner) Path(prefix, tenantID, fileID string, _ time.Time) string {
+	return prefix + fileID + "?t=" + tenantID + "&s=sig"
+}
+
 type fakeHasher struct{}
 
 func (fakeHasher) Hash(_ context.Context, pw string) (string, error) { return "hash:" + pw, nil }
@@ -132,7 +140,7 @@ func validInput() modelTenant.SetupInput {
 }
 
 func newService(store *fakeStore, tx *fakeTx) *TenantService {
-	return NewTenantService(store, tx, fakeHasher{}, fakeFiles{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewTenantService(store, tx, fakeHasher{}, fakeFiles{}, fakeSigner{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func TestSetup(t *testing.T) {

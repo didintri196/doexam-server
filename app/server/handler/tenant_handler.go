@@ -67,25 +67,60 @@ func (h *TenantHandler) Update(c *fiber.Ctx) error {
 func (h *TenantHandler) SetLogo(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
 
-	fh, err := c.FormFile("file")
-	if err != nil {
-		return handleError(c, logger, "missing file", &errr.ValidationError{Fields: map[string]string{"file": "required"}})
-	}
-	f, err := fh.Open()
-	if err != nil {
-		return handleError(c, logger, "failed to open upload", err)
-	}
-	defer f.Close()
-	// read one byte past the limit so the service can reject oversized files
-	data, err := io.ReadAll(io.LimitReader(f, modelTenant.MaxLogoBytes+1))
+	name, data, err := readImage(c)
 	if err != nil {
 		return handleError(c, logger, "failed to read upload", err)
 	}
-	dto, err := h.tenantSvc.SetLogo(c.UserContext(), principal(c), fh.Filename, data, clientInfo(c))
+	dto, err := h.tenantSvc.SetLogo(c.UserContext(), principal(c), name, data, clientInfo(c))
 	if err != nil {
 		return handleError(c, logger, "failed to set logo", err)
 	}
 	return SuccessResponse(c, fiber.StatusOK, "logo updated", dto)
+}
+
+// SetCardSignature handles PUT /api/v1/tenant/card-signature (multipart: file).
+func (h *TenantHandler) SetCardSignature(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+
+	name, data, err := readImage(c)
+	if err != nil {
+		return handleError(c, logger, "failed to read upload", err)
+	}
+	dto, err := h.tenantSvc.SetCardSignature(c.UserContext(), principal(c), name, data, clientInfo(c))
+	if err != nil {
+		return handleError(c, logger, "failed to set card signature", err)
+	}
+	return SuccessResponse(c, fiber.StatusOK, "card signature updated", dto)
+}
+
+// RemoveCardSignature handles DELETE /api/v1/tenant/card-signature.
+func (h *TenantHandler) RemoveCardSignature(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+
+	dto, err := h.tenantSvc.RemoveCardSignature(c.UserContext(), principal(c), clientInfo(c))
+	if err != nil {
+		return handleError(c, logger, "failed to remove card signature", err)
+	}
+	return SuccessResponse(c, fiber.StatusOK, "card signature removed", dto)
+}
+
+// readImage reads the multipart "file" of a tenant image upload, one byte past the
+// limit so the service can reject oversized files.
+func readImage(c *fiber.Ctx) (string, []byte, error) {
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return "", nil, &errr.ValidationError{Fields: map[string]string{"file": "required"}}
+	}
+	f, err := fh.Open()
+	if err != nil {
+		return "", nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, modelTenant.MaxLogoBytes+1))
+	if err != nil {
+		return "", nil, err
+	}
+	return fh.Filename, data, nil
 }
 
 // RemoveLogo handles DELETE /api/v1/tenant/logo.

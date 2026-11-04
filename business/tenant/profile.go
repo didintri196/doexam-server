@@ -57,6 +57,9 @@ func (s *TenantService) Update(ctx context.Context, p modelAuth.Principal, in mo
 		set(&st.Tagline, in.Tagline)
 		set(&st.Letterhead, in.Letterhead)
 		set(&st.ExamRules, in.ExamRules)
+		if in.Card != nil {
+			st.Card = in.Card.Apply(st.Card)
+		}
 		if name == t.Name && st == before {
 			updated = t
 			return nil // nothing changed: no write, no audit entry
@@ -79,8 +82,23 @@ func (s *TenantService) Update(ctx context.Context, p modelAuth.Principal, in mo
 		}
 		return modelTenant.TenantDTO{}, fail(span, err)
 	}
-	return modelTenant.ToDTO(updated), nil
+	return s.toDTO(updated), nil
 }
+
+// imageSlot is a tenant image kept in the settings: the logo or the card signature.
+type imageSlot struct {
+	name   string // storage key prefix and default file name
+	action string // audit action
+	field  string // audit field
+	get    func(*modelTenant.Settings) *string
+}
+
+var (
+	logoSlot = imageSlot{name: "logo", action: modelAudit.ActionTenantLogo, field: "logo_file_id",
+		get: func(st *modelTenant.Settings) *string { return &st.LogoFileID }}
+	signatureSlot = imageSlot{name: "card-signature", action: modelAudit.ActionTenantCardSign, field: "signature_file_id",
+		get: func(st *modelTenant.Settings) *string { return &st.Card.SignatureFileID }}
+)
 
 // SetLogo stores a new logo (PNG, JPEG or WebP, at most MaxLogoBytes) and points the tenant at it.
 // data may be one byte longer than the limit so oversized uploads can be told apart.
@@ -88,31 +106,10 @@ func (s *TenantService) SetLogo(ctx context.Context, p modelAuth.Principal, file
 	ctx, span := s.tracer.Start(ctx, "TenantService.SetLogo")
 	defer span.End()
 
-	if !p.Has(modelAuth.PermTenantManage) {
-		return modelTenant.TenantDTO{}, fail(span, errr.ErrForbidden)
-	}
-	mime, ext, err := checkLogo(data)
+	dto, err := s.setImage(ctx, p, logoSlot, filename, data, client)
 	if err != nil {
 		return modelTenant.TenantDTO{}, fail(span, err)
 	}
-
-	sum := sha256.Sum256(data)
-	file := modelMedia.MediaFileEntity{
-		ID: newID(), TenantID: p.TenantID, OriginalName: truncateName(filename), MimeType: mime,
-		SizeBytes: int64(len(data)), SHA256: sum[:], UploadedBy: &p.UserID,
-	}
-	file.StorageKey = fmt.Sprintf("%s/branding/logo-%s.%s", p.TenantID, file.ID, ext)
-	// The file is written before the transaction: if the transaction fails, an unreferenced
-	// file stays behind, which is harmless; the reverse order could point at a missing file.
-	if err := s.files.Put(ctx, file.StorageKey, data); err != nil {
-		return modelTenant.TenantDTO{}, fail(span, err)
-	}
-
-	dto, err := s.changeLogo(ctx, p, &file, client)
-	if err != nil {
-		return modelTenant.TenantDTO{}, fail(span, err)
-	}
-	s.logger.InfoContext(ctx, "tenant logo updated", slog.String("tenant_id", p.TenantID), slog.String("file_id", file.ID))
 	return dto, nil
 }
 
@@ -121,18 +118,77 @@ func (s *TenantService) RemoveLogo(ctx context.Context, p modelAuth.Principal, c
 	ctx, span := s.tracer.Start(ctx, "TenantService.RemoveLogo")
 	defer span.End()
 
-	if !p.Has(modelAuth.PermTenantManage) {
-		return modelTenant.TenantDTO{}, fail(span, errr.ErrForbidden)
-	}
-	dto, err := s.changeLogo(ctx, p, nil, client)
+	dto, err := s.removeImage(ctx, p, logoSlot, client)
 	if err != nil {
 		return modelTenant.TenantDTO{}, fail(span, err)
 	}
 	return dto, nil
 }
 
-// changeLogo records file (nil removes the logo) and points the tenant settings at it.
-func (s *TenantService) changeLogo(ctx context.Context, p modelAuth.Principal, file *modelMedia.MediaFileEntity, client modelAudit.Client) (modelTenant.TenantDTO, error) {
+// SetCardSignature stores the signature/stamp image printed on participant cards
+// (same formats and limit as the logo). It is served only through signed links.
+func (s *TenantService) SetCardSignature(ctx context.Context, p modelAuth.Principal, filename string, data []byte, client modelAudit.Client) (modelTenant.TenantDTO, error) {
+	ctx, span := s.tracer.Start(ctx, "TenantService.SetCardSignature")
+	defer span.End()
+
+	dto, err := s.setImage(ctx, p, signatureSlot, filename, data, client)
+	if err != nil {
+		return modelTenant.TenantDTO{}, fail(span, err)
+	}
+	return dto, nil
+}
+
+// RemoveCardSignature clears the card signature image.
+func (s *TenantService) RemoveCardSignature(ctx context.Context, p modelAuth.Principal, client modelAudit.Client) (modelTenant.TenantDTO, error) {
+	ctx, span := s.tracer.Start(ctx, "TenantService.RemoveCardSignature")
+	defer span.End()
+
+	dto, err := s.removeImage(ctx, p, signatureSlot, client)
+	if err != nil {
+		return modelTenant.TenantDTO{}, fail(span, err)
+	}
+	return dto, nil
+}
+
+func (s *TenantService) setImage(ctx context.Context, p modelAuth.Principal, slot imageSlot, filename string, data []byte, client modelAudit.Client) (modelTenant.TenantDTO, error) {
+	if !p.Has(modelAuth.PermTenantManage) {
+		return modelTenant.TenantDTO{}, errr.ErrForbidden
+	}
+	mime, ext, err := checkLogo(data)
+	if err != nil {
+		return modelTenant.TenantDTO{}, err
+	}
+
+	sum := sha256.Sum256(data)
+	file := modelMedia.MediaFileEntity{
+		ID: newID(), TenantID: p.TenantID, OriginalName: truncateName(filename, slot.name), MimeType: mime,
+		SizeBytes: int64(len(data)), SHA256: sum[:], UploadedBy: &p.UserID,
+	}
+	file.StorageKey = fmt.Sprintf("%s/branding/%s-%s.%s", p.TenantID, slot.name, file.ID, ext)
+	// The file is written before the transaction: if the transaction fails, an unreferenced
+	// file stays behind, which is harmless; the reverse order could point at a missing file.
+	if err := s.files.Put(ctx, file.StorageKey, data); err != nil {
+		return modelTenant.TenantDTO{}, err
+	}
+
+	dto, err := s.changeImage(ctx, p, slot, &file, client)
+	if err != nil {
+		return modelTenant.TenantDTO{}, err
+	}
+	s.logger.InfoContext(ctx, "tenant image updated", slog.String("tenant_id", p.TenantID),
+		slog.String("image", slot.name), slog.String("file_id", file.ID))
+	return dto, nil
+}
+
+func (s *TenantService) removeImage(ctx context.Context, p modelAuth.Principal, slot imageSlot, client modelAudit.Client) (modelTenant.TenantDTO, error) {
+	if !p.Has(modelAuth.PermTenantManage) {
+		return modelTenant.TenantDTO{}, errr.ErrForbidden
+	}
+	return s.changeImage(ctx, p, slot, nil, client)
+}
+
+// changeImage records file (nil removes the image) and points the tenant settings at it.
+func (s *TenantService) changeImage(ctx context.Context, p modelAuth.Principal, slot imageSlot, file *modelMedia.MediaFileEntity, client modelAudit.Client) (modelTenant.TenantDTO, error) {
 	var updated modelTenant.TenantEntity
 	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
 		t, err := s.storer.FindForUpdate(ctx, p.TenantID)
@@ -140,26 +196,27 @@ func (s *TenantService) changeLogo(ctx context.Context, p modelAuth.Principal, f
 			return err
 		}
 		st := modelTenant.DecodeSettings(t.Settings)
-		before := st.LogoFileID
-		st.LogoFileID = ""
+		ref := slot.get(&st)
+		before := *ref
+		*ref = ""
 		if file != nil {
 			if err := s.storer.CreateMediaFile(ctx, file); err != nil {
 				return err
 			}
-			st.LogoFileID = file.ID
+			*ref = file.ID
 		}
 		updated = t
-		if before == st.LogoFileID {
-			return nil // removing a logo that is not set
+		if before == *ref {
+			return nil // removing an image that is not set
 		}
 		if err := s.storer.UpdateTenant(ctx, t.ID, t.Name, st.Encode()); err != nil {
 			return err
 		}
 		updated.Settings = st.Encode()
 		return s.storer.CreateAuditLog(ctx, modelAudit.New(modelAudit.Entry{
-			TenantID: t.ID, ActorID: p.UserID, Action: modelAudit.ActionTenantLogo,
+			TenantID: t.ID, ActorID: p.UserID, Action: slot.action,
 			EntityType: "tenant", EntityID: t.ID, Client: client,
-			Before: map[string]any{"logo_file_id": before}, After: map[string]any{"logo_file_id": st.LogoFileID},
+			Before: map[string]any{slot.field: before}, After: map[string]any{slot.field: *ref},
 		}))
 	})
 	if err != nil {
@@ -168,7 +225,7 @@ func (s *TenantService) changeLogo(ctx context.Context, p modelAuth.Principal, f
 		}
 		return modelTenant.TenantDTO{}, err
 	}
-	return modelTenant.ToDTO(updated), nil
+	return s.toDTO(updated), nil
 }
 
 // Public returns what a login page may show before sign-in. slug is optional while
@@ -271,6 +328,21 @@ func validateUpdate(in modelTenant.UpdateInput) error {
 		v.Check(utf8.RuneCountInString(*in.ExamRules) <= modelTenant.MaxExamRulesLen, "exam_rules",
 			fmt.Sprintf("max %d chars", modelTenant.MaxExamRulesLen))
 	}
+	if c := in.Card; c != nil {
+		for _, f := range []struct {
+			field, value string
+			max          int
+		}{
+			{"card.title", c.Title, modelTenant.MaxCardTitleLen},
+			{"card.id_label", c.IDLabel, modelTenant.MaxCardIDLabelLen},
+			{"card.note", c.Note, modelTenant.MaxCardNoteLen},
+			{"card.signer_title", c.SignerTitle, modelTenant.MaxSignerTitleLen},
+			{"card.signer_name", c.SignerName, modelTenant.MaxSignerNameLen},
+			{"card.signer_number", c.SignerNumber, modelTenant.MaxSignerNumberLen},
+		} {
+			v.Check(utf8.RuneCountInString(f.value) <= f.max, f.field, fmt.Sprintf("max %d chars", f.max))
+		}
+	}
 	return v.Err()
 }
 
@@ -302,9 +374,9 @@ func checkLogo(data []byte) (mime, ext string, err error) {
 	return mime, ext, nil
 }
 
-func truncateName(name string) string {
+func truncateName(name, fallback string) string {
 	if name == "" {
-		return "logo"
+		return fallback
 	}
 	return modelAudit.Truncate(name, 255)
 }

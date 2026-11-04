@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	modelTenant "doexam/models/tenant"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -18,7 +17,9 @@ import (
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
+	modelMedia "doexam/models/media"
 	modelSession "doexam/models/session"
+	modelTenant "doexam/models/tenant"
 	"doexam/pkg/errr"
 	"doexam/pkg/sessiontoken"
 )
@@ -59,14 +60,15 @@ type SessionService struct {
 	storer   SessionStorer
 	tx       TxManager
 	attempts AttemptFinalizer
+	links    LinkSigner // card signature image
 	now      func() time.Time
 	tracer   trace.Tracer
 	logger   *slog.Logger
 }
 
 // NewSessionService returns a concrete SessionService.
-func NewSessionService(storer SessionStorer, tx TxManager, attempts AttemptFinalizer, hasher PasswordHasher, logger *slog.Logger) *SessionService {
-	return &SessionService{storer: storer, tx: tx, attempts: attempts, hasher: hasher, now: time.Now, tracer: otel.Tracer("doexam.service.session"), logger: logger}
+func NewSessionService(storer SessionStorer, tx TxManager, attempts AttemptFinalizer, hasher PasswordHasher, links LinkSigner, logger *slog.Logger) *SessionService {
+	return &SessionService{storer: storer, tx: tx, attempts: attempts, hasher: hasher, links: links, now: time.Now, tracer: otel.Tracer("doexam.service.session"), logger: logger}
 }
 
 // List returns sessions: all for managers, assigned ones for proctors.
@@ -139,8 +141,14 @@ func (s *SessionService) Print(ctx context.Context, p modelAuth.Principal, id st
 			return err
 		}
 		st := modelTenant.DecodeSettings(t.Settings)
+		var signature *string
+		if id := st.Card.SignatureFileID; id != "" {
+			u := s.links.Path(modelMedia.URLPrefix, t.ID, id, s.now())
+			signature = &u
+		}
 		out.Institution = modelSession.InstitutionDTO{
 			Name: t.Name, Letterhead: st.Letterhead, ExamRules: st.ExamRules, LogoURL: modelTenant.LogoURL(t.Slug, st.LogoFileID),
+			Card: modelTenant.ToCardDTO(st.Card, signature),
 		}
 		return nil
 	})
