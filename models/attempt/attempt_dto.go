@@ -48,6 +48,9 @@ type SyncDTO struct {
 	Status     Status     `json:"status"`
 	DeadlineAt time.Time  `json:"deadline_at"`
 	ServerTime time.Time  `json:"server_time"`
+	// AnnouncementCursor changes whenever an announcement of the session is sent or
+	// retracted; the client then reloads GET /my/announcements ("" = none).
+	AnnouncementCursor string `json:"announcement_cursor"`
 }
 
 // ExtendInput is the body of POST /api/v1/attempts/:id/extend.

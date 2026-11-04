@@ -2,7 +2,7 @@ package session
 
 import (
 	"context"
-	modelTenant "doexam/models/tenant"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -12,6 +12,7 @@ import (
 
 	modelAudit "doexam/models/audit"
 	modelSession "doexam/models/session"
+	modelTenant "doexam/models/tenant"
 	dbpg "doexam/pkg/db-pg"
 	"doexam/pkg/errr"
 )
@@ -332,4 +333,163 @@ func wrap(err error, op string) error {
 		return fmt.Errorf("%s: %w", op, errr.ErrConflict)
 	}
 	return fmt.Errorf("%s: %w", op, err)
+}
+
+// ── announcements ──────────────────────────────────────────────
+
+func (r *SessionRepo) LastAnnouncementChange(ctx context.Context, sessionID string) (time.Time, error) {
+	var t sql.NullTime // NULL while the session has no announcements
+	err := dbpg.Conn(ctx, r.db).Table("session_announcements").
+		Select("max(greatest(created_at, coalesce(retracted_at, created_at)))").
+		Where("session_id = ?", sessionID).Row().Scan(&t)
+	if err != nil || !t.Valid {
+		return time.Time{}, wrap(err, "last announcement change")
+	}
+	return t.Time.UTC(), nil
+}
+
+func (r *SessionRepo) MarkAnnouncementRead(ctx context.Context, announcementID, userID string, at time.Time) (bool, error) {
+	res := dbpg.Conn(ctx, r.db).Table("session_announcement_recipients").
+		Where("announcement_id = ? AND user_id = ? AND read_at IS NULL", announcementID, userID).
+		Update("read_at", at)
+	return res.RowsAffected > 0, wrap(res.Error, "mark announcement read")
+}
+
+func (r *SessionRepo) CountRecentAnnouncements(ctx context.Context, sessionID string, since time.Time) (int64, error) {
+	var n int64
+	err := dbpg.Conn(ctx, r.db).Model(&modelSession.AnnouncementEntity{}).
+		Where("session_id = ? AND created_at >= ?", sessionID, since).Count(&n).Error
+	return n, wrap(err, "count recent announcements")
+}
+
+func (r *SessionRepo) CreateAnnouncement(ctx context.Context, a *modelSession.AnnouncementEntity) error {
+	return wrap(dbpg.Conn(ctx, r.db).Create(a).Error, "create announcement")
+}
+
+func (r *SessionRepo) AddAnnouncementRecipients(ctx context.Context, tenantID, announcementID, sessionID string, userIDs []string) (int64, error) {
+	q := `INSERT INTO session_announcement_recipients (announcement_id, tenant_id, user_id)
+		SELECT ?, ?, sp.user_id FROM exam_session_participants sp WHERE sp.session_id = ?`
+	args := []any{announcementID, tenantID, sessionID}
+	if userIDs != nil {
+		if len(userIDs) == 0 {
+			return 0, nil
+		}
+		q += ` AND sp.user_id IN ?`
+		args = append(args, userIDs)
+	}
+	res := dbpg.Conn(ctx, r.db).Exec(q, args...)
+	return res.RowsAffected, wrap(res.Error, "add announcement recipients")
+}
+
+func (r *SessionRepo) SetAnnouncementRecipients(ctx context.Context, announcementID string, n int) error {
+	err := dbpg.Conn(ctx, r.db).Model(&modelSession.AnnouncementEntity{}).
+		Where("id = ?", announcementID).Update("recipients", n).Error
+	return wrap(err, "set announcement recipients")
+}
+
+func (r *SessionRepo) ListAnnouncements(ctx context.Context, sessionID string) ([]modelSession.AnnouncementDTO, error) {
+	var rows []struct {
+		modelSession.AnnouncementEntity
+		Username string
+		FullName string
+		Read     int
+	}
+	err := dbpg.Conn(ctx, r.db).Table("session_announcements a").
+		Select(`a.*, u.username, u.full_name,
+			(SELECT count(*) FROM session_announcement_recipients sr WHERE sr.announcement_id = a.id AND sr.read_at IS NOT NULL) AS read`).
+		Joins("JOIN users u ON u.id = a.sender_id").
+		Where("a.session_id = ?", sessionID).Order("a.id DESC").Limit(200).Scan(&rows).Error
+	if err != nil {
+		return nil, wrap(err, "list announcements")
+	}
+	out := make([]modelSession.AnnouncementDTO, len(rows))
+	for i, a := range rows {
+		out[i] = modelSession.AnnouncementDTO{
+			ID: a.ID, Body: a.Body, Priority: a.Priority, Target: a.Target,
+			Sender:     modelSession.PersonDTO{UserID: a.SenderID, Username: a.Username, FullName: a.FullName},
+			Recipients: a.Recipients, Read: a.Read, RetractedAt: utcPtr(a.RetractedAt), CreatedAt: a.CreatedAt.UTC(),
+		}
+	}
+	return out, nil
+}
+
+func (r *SessionRepo) UnreadImportant(ctx context.Context, sessionID string, before time.Time) ([]string, error) {
+	out := []string{}
+	err := dbpg.Conn(ctx, r.db).Table("session_announcement_recipients sr").
+		Distinct("sr.user_id").
+		Joins("JOIN session_announcements a ON a.id = sr.announcement_id").
+		Where("a.session_id = ? AND a.priority = ? AND a.retracted_at IS NULL AND a.created_at < ? AND sr.read_at IS NULL",
+			sessionID, modelSession.PriorityImportant, before).
+		Pluck("sr.user_id", &out).Error
+	return out, wrap(err, "unread important announcements")
+}
+
+func (r *SessionRepo) ListRecipients(ctx context.Context, announcementID string) ([]modelSession.RecipientDTO, error) {
+	out := []modelSession.RecipientDTO{}
+	err := dbpg.Conn(ctx, r.db).Table("session_announcement_recipients sr").
+		Select("sr.user_id, u.username, u.full_name, sp.seat, sr.read_at").
+		Joins("JOIN session_announcements a ON a.id = sr.announcement_id").
+		Joins("JOIN users u ON u.id = sr.user_id").
+		Joins("LEFT JOIN exam_session_participants sp ON sp.session_id = a.session_id AND sp.user_id = sr.user_id").
+		Where("sr.announcement_id = ?", announcementID).
+		Order("sr.read_at IS NOT NULL, sp.seat NULLS LAST, u.full_name").Scan(&out).Error
+	for i := range out {
+		out[i].ReadAt = utcPtr(out[i].ReadAt)
+	}
+	return out, wrap(err, "list announcement recipients")
+}
+
+func (r *SessionRepo) FindAnnouncement(ctx context.Context, id string) (modelSession.AnnouncementEntity, error) {
+	var a modelSession.AnnouncementEntity
+	err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&a).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return a, errr.ErrNotFound
+	}
+	return a, wrap(err, "find announcement")
+}
+
+func (r *SessionRepo) RetractAnnouncement(ctx context.Context, id string, at time.Time) error {
+	err := dbpg.Conn(ctx, r.db).Model(&modelSession.AnnouncementEntity{}).
+		Where("id = ? AND retracted_at IS NULL", id).Update("retracted_at", at).Error
+	return wrap(err, "retract announcement")
+}
+
+func (r *SessionRepo) MyAnnouncements(ctx context.Context, sessionID, userID string) ([]modelSession.MyAnnouncementDTO, error) {
+	out := []modelSession.MyAnnouncementDTO{}
+	// a retracted announcement keeps its place but not its text
+	err := dbpg.Conn(ctx, r.db).Table("session_announcement_recipients sr").
+		Select(`a.id, a.session_id, CASE WHEN a.retracted_at IS NULL THEN a.body ELSE '' END AS body, a.priority,
+			CASE WHEN EXISTS (SELECT 1 FROM exam_session_proctors pr WHERE pr.session_id = a.session_id AND pr.user_id = a.sender_id)
+				THEN 'proctor' ELSE 'committee' END AS "from",
+			sr.read_at, a.retracted_at, a.created_at`).
+		Joins("JOIN session_announcements a ON a.id = sr.announcement_id").
+		Where("a.session_id = ? AND sr.user_id = ?", sessionID, userID).
+		Order("a.id DESC").Limit(200).Scan(&out).Error
+	for i := range out {
+		out[i].ReadAt, out[i].RetractedAt, out[i].CreatedAt = utcPtr(out[i].ReadAt), utcPtr(out[i].RetractedAt), out[i].CreatedAt.UTC()
+	}
+	return out, wrap(err, "my announcements")
+}
+
+func (r *SessionRepo) IsAnnouncementRecipient(ctx context.Context, announcementID, userID string) (bool, error) {
+	var n int64
+	err := dbpg.Conn(ctx, r.db).Table("session_announcement_recipients").
+		Where("announcement_id = ? AND user_id = ?", announcementID, userID).Count(&n).Error
+	return n > 0, wrap(err, "is announcement recipient")
+}
+
+func (r *SessionRepo) RunningSessionIDs(ctx context.Context) ([]string, error) {
+	out := []string{}
+	err := dbpg.Conn(ctx, r.db).Model(&modelSession.SessionEntity{}).
+		Where("status IN ?", []modelSession.Status{modelSession.StatusOpen, modelSession.StatusPaused}).
+		Order("starts_at").Pluck("id", &out).Error
+	return out, wrap(err, "running sessions")
+}
+
+func utcPtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }

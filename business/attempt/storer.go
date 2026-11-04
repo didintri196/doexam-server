@@ -135,6 +135,13 @@ type MediaLinker interface {
 	Refs(ctx context.Context, tenantID string, ids []string) (map[string]modelMedia.Ref, error)
 }
 
+// Announcements is the session domain's announcement board (business/session). Both
+// methods run inside the caller's tenant transaction.
+type Announcements interface {
+	Cursor(ctx context.Context, sessionID string) (string, error)
+	MarkRead(ctx context.Context, announcementID, userID string, at time.Time) error
+}
+
 // TxManager runs fn inside a transaction scoped to tenantID.
 type TxManager interface {
 	WithTenant(ctx context.Context, tenantID string, fn func(ctx context.Context) error) error

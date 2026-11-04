@@ -55,16 +55,18 @@ const (
 	ActionExamUnpublish = "exam.unpublish"
 	ActionExamArchive   = "exam.archive"
 
-	ActionSessionCreate      = "session.create"
-	ActionSessionUpdate      = "session.update"
-	ActionSessionDelete      = "session.delete"
-	ActionSessionStatus      = "session.status"
-	ActionSessionTokenRotate = "session.token_rotate"
-	ActionSessionProctors    = "session.proctors"
-	ActionCardPasswords      = "session.card_passwords" // passwords themselves are never logged
-	ActionParticipantAdd     = "session.participant_add"
-	ActionParticipantUpdate  = "session.participant_update"
-	ActionParticipantRemove  = "session.participant_remove"
+	ActionSessionCreate       = "session.create"
+	ActionSessionUpdate       = "session.update"
+	ActionSessionDelete       = "session.delete"
+	ActionSessionStatus       = "session.status"
+	ActionSessionTokenRotate  = "session.token_rotate"
+	ActionSessionProctors     = "session.proctors"
+	ActionCardPasswords       = "session.card_passwords" // passwords themselves are never logged
+	ActionParticipantAdd      = "session.participant_add"
+	ActionParticipantUpdate   = "session.participant_update"
+	ActionParticipantRemove   = "session.participant_remove"
+	ActionAnnouncementSend    = "session.announcement_send"
+	ActionAnnouncementRetract = "session.announcement_retract"
 
 	ActionGradeManual      = "grade.manual"
 	ActionAdjustmentCreate = "grade.adjustment_create"

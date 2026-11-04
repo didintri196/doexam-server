@@ -143,12 +143,14 @@ const (
 	EventSubmitted      = "SUBMITTED"
 	// EventMediaPlayed: the participant started an audio clip (payload {media_id, play_no}).
 	EventMediaPlayed = "MEDIA_PLAYED"
+	// EventAnnouncementRead {announcement_id}: the participant confirmed a session announcement.
+	EventAnnouncementRead = "ANNOUNCEMENT_READ"
 	// EventMediaPlaysGranted: a proctor allowed extra plays of every limited clip (payload {plays}).
 	EventMediaPlaysGranted = "MEDIA_PLAYS_GRANTED"
 )
 
 // ClientEventTypes may be sent by the exam client.
-var ClientEventTypes = []string{EventItemViewed, EventResponseSaved, EventFlagSet, EventFocusLost, EventFocusReturned, EventFullscreenExit, EventMediaPlayed}
+var ClientEventTypes = []string{EventItemViewed, EventResponseSaved, EventFlagSet, EventFocusLost, EventFocusReturned, EventFullscreenExit, EventMediaPlayed, EventAnnouncementRead}
 
 // ViolationEventTypes are counted on the proctor dashboard.
 var ViolationEventTypes = []string{EventFocusLost, EventFullscreenExit, EventDeviceChanged}

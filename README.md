@@ -137,6 +137,8 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET/POST | `/api/v1/sessions/:id/participants` 🔒 | Daftar peserta (`q`, `attendance`) / tambah `{user_ids?, group_ids?, extra_time_minutes?}` (total ≤5000) `session.manage` |
 | PATCH/DELETE | `/api/v1/sessions/:id/participants/:user_id` 🔒 | Kehadiran, kursi, catatan (proktor) & `extra_time_minutes` (manager) / keluarkan (belum mulai) |
 | GET | `/api/v1/my/sessions` 🔒 | Sesi milik peserta yang login (tanpa token) |
+| GET | `/api/v1/my/announcements?session_id=` 🔒 peserta | Pengumuman untuk peserta di sesi itu (terbaru dulu) + `cursor`. Yang ditarik tetap tampil tanpa teks |
+| POST | `/api/v1/my/announcements/:aid/read` 🔒 peserta | Konfirmasi baca sebelum attempt dimulai (saat attempt berjalan lewat event `ANNOUNCEMENT_READ`) |
 | POST | `/api/v1/attempts` 🔒 `attempt.take` | Mulai / lanjutkan ujian `{session_id, token}` + header `X-Device-ID` → soal tanpa kunci |
 | GET | `/api/v1/attempts/:id` 🔒 | Tampilan ujian peserta (status, batas waktu, `server_time`, section & soal aktif, jawaban tersimpan, `media` = link bertanda tangan, `media_plays` = putaran audio tercatat per media, `extra_plays` = tambahan dari proktor) |
 | POST | `/api/v1/attempts/:id/events` 🔒 | Sinkron batch event (≤200) — idempoten, aman dikirim ulang |
@@ -144,6 +146,11 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | POST | `/api/v1/attempts/:id/submit` 🔒 | Kumpulkan & nilai otomatis |
 | GET | `/api/v1/attempts/:id/result` 🔒 | Hasil sesuai `result_visibility` (+ pembahasan bila `show_explanation`) |
 | GET | `/api/v1/my/attempts` 🔒 | Riwayat ujian peserta |
+| POST | `/api/v1/sessions/:id/announcements` 🔒 proktor sesi / `session.manage` | Kirim pengumuman `{body (teks ≤500), priority: info\|important, target: all\|selected, user_ids?}` → `{id, recipients, skipped}`. Sesi dijadwalkan/berlangsung saja, maks. 10 per menit per sesi (409) |
+| GET | `/api/v1/sessions/:id/announcements` 🔒 proktor sesi / `session.manage` | Riwayat (terbaru dulu) dengan `recipients`/`read`, plus `unread_important` (peserta yang belum mengonfirmasi pengumuman penting > 1 menit) |
+| GET | `/api/v1/sessions/:id/announcements/:aid/recipients` 🔒 proktor sesi / `session.manage` | Penerima dan `read_at` (belum membaca di atas) |
+| POST | `/api/v1/sessions/:id/announcements/:aid/retract` 🔒 pengirim / `session.manage` | Tarik pengumuman |
+| POST | `/api/v1/announcements` 🔒 `session.manage` | Satu pengumuman ke semua peserta beberapa sesi: `{session_ids \| running: true, body, priority}` |
 | GET | `/api/v1/sessions/:id/monitor` 🔒 | Dashboard proktor: status, terjawab, batas waktu, terakhir aktif, pelanggaran tiap peserta |
 | POST | `/api/v1/attempts/:id/extend` · `/lock` · `/unlock` · `/reset-device` · `/force-submit` 🔒 | Aksi proktor (proktor sesi atau `session.manage`) |
 | POST | `/api/v1/attempts/:id/grant-plays` 🔒 | Aksi proktor: `{plays: 1-5}` tambahan putar untuk setiap audio berbatas (mis. speaker rusak). Dicatat sebagai event `MEDIA_PLAYS_GRANTED` |
@@ -185,7 +192,7 @@ Ujian: semua perubahan struktur menjawab dengan **ujian lengkap terbaru** (edito
 
 **Format impor Word**: soal bernomor `1.`/`1)` (atau penomoran otomatis Word), pilihan `A.`/`a)` (atau huruf otomatis), `*` di depan huruf = jawaban benar. Baris berlabel (tanpa beda huruf besar-kecil): `Jenis: pg|pgk|bs|isian|esai` (berlaku untuk soal sesudahnya), `Kunci: B` / `A, C` / `Benar` / `jawaban1 | jawaban2`, `Skor: 2`, `Kompetensi: <kode>`, `Pembahasan: …`, `Bacaan: <judul>` … `Akhir bacaan`. Tanpa `Jenis:`: ada pilihan → `pg` (dua kunci → `pgk`), ada `Kunci` tanpa pilihan → `isian`, selain itu `esai`. Tanpa `Kunci` dan `*`, pilihan yang seluruhnya tebal dianggap benar. Gambar PNG/JPEG/GIF/WebP ikut tersimpan (EMF/WMF dilewati dengan peringatan); rumus Word dikonversi ke LaTeX untuk pecahan, pangkat, indeks, akar, kurung, Σ/∫, sisanya diberi peringatan. Validasi isi sama persis dengan editor soal.
 
-**Event dari exam client** (`POST /attempts/:id/events`): tiap event `{client_event_id (UUID), client_seq, type, attempt_item_id?, payload, client_ts}`. Tipe: `RESPONSE_SAVED` `{"response": {...}|null}`, `FLAG_SET` `{"flagged": true}`, `ITEM_VIEWED` `{"time_spent_ms": 3000}`, `FOCUS_LOST`, `FOCUS_RETURNED`, `FULLSCREEN_EXIT`, `MEDIA_PLAYED` `{"media_id": "…", "play_no": 1}` (audio mulai diputar; tetap dicatat walau melewati batas, supaya proktor melihatnya). Bentuk jawaban: `{"selected":"o2"}`, `{"selected":["a","c"]}`, `{"value":true}`, `{"text":"..."}`. Event ditolak per baris dengan alasan (`locked`, `section_closed`, `forward_only`, `after_deadline`, `attempt_closed`, ...), sisanya tetap diterapkan.
+**Event dari exam client** (`POST /attempts/:id/events`): tiap event `{client_event_id (UUID), client_seq, type, attempt_item_id?, payload, client_ts}`. Tipe: `RESPONSE_SAVED` `{"response": {...}|null}`, `FLAG_SET` `{"flagged": true}`, `ITEM_VIEWED` `{"time_spent_ms": 3000}`, `FOCUS_LOST`, `FOCUS_RETURNED`, `FULLSCREEN_EXIT`, `MEDIA_PLAYED` `{"media_id": "…", "play_no": 1}` (audio mulai diputar; tetap dicatat walau melewati batas, supaya proktor melihatnya), `ANNOUNCEMENT_READ` `{"announcement_id": "…"}` (konfirmasi pengumuman; diterima juga setelah batas waktu). Respons sinkron membawa `announcement_cursor`: bila berubah, klien memuat ulang `GET /my/announcements`. Bentuk jawaban: `{"selected":"o2"}`, `{"selected":["a","c"]}`, `{"value":true}`, `{"text":"..."}`. Event ditolak per baris dengan alasan (`locked`, `section_closed`, `forward_only`, `after_deadline`, `attempt_closed`, ...), sisanya tetap diterapkan.
 
 Menilai & regrade butuh `grade.write`, `tenant.manage`, atau menjadi pembuat ujian. Hasil peserta berstatus `graded` setelah semua esai dinilai (atau dianulir).
 

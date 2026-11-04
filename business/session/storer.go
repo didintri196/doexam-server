@@ -54,6 +54,26 @@ type SessionStorer interface {
 	MySessions(ctx context.Context, userID string, since time.Time) ([]modelSession.MySessionDTO, error)
 
 	CreateAuditLog(ctx context.Context, log *modelAudit.AuditLogEntity) error
+
+	// Announcements (DOCS/PLAN/12-PENGUMUMAN-PESERTA.md).
+	BoardStorer
+	CountRecentAnnouncements(ctx context.Context, sessionID string, since time.Time) (int64, error)
+	CreateAnnouncement(ctx context.Context, a *modelSession.AnnouncementEntity) error
+	// AddAnnouncementRecipients adds the session's participants (all, or only those in
+	// userIDs when it is not nil) and returns how many were added.
+	AddAnnouncementRecipients(ctx context.Context, tenantID, announcementID, sessionID string, userIDs []string) (int64, error)
+	SetAnnouncementRecipients(ctx context.Context, announcementID string, n int) error
+	ListAnnouncements(ctx context.Context, sessionID string) ([]modelSession.AnnouncementDTO, error)
+	// UnreadImportant returns participants with an important, not retracted announcement
+	// sent before `before` that they have not confirmed.
+	UnreadImportant(ctx context.Context, sessionID string, before time.Time) ([]string, error)
+	ListRecipients(ctx context.Context, announcementID string) ([]modelSession.RecipientDTO, error)
+	FindAnnouncement(ctx context.Context, id string) (modelSession.AnnouncementEntity, error)
+	RetractAnnouncement(ctx context.Context, id string, at time.Time) error
+	MyAnnouncements(ctx context.Context, sessionID, userID string) ([]modelSession.MyAnnouncementDTO, error)
+	IsAnnouncementRecipient(ctx context.Context, announcementID, userID string) (bool, error)
+	// RunningSessionIDs lists open and paused sessions.
+	RunningSessionIDs(ctx context.Context) ([]string, error)
 }
 
 // CardCandidate is a participant who may get a card password.
