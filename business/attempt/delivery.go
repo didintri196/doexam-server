@@ -64,7 +64,7 @@ func (s *AttemptService) view(ctx context.Context, a modelAttempt.AttemptEntity)
 		}
 	}
 	out := modelAttempt.AttemptView{
-		ID: a.ID, ExamTitle: snap.ExamTitle, Instructions: snap.Instructions, Status: a.Status, Navigation: snap.Navigation,
+		ID: a.ID, SessionID: a.SessionID, ExamTitle: snap.ExamTitle, Instructions: snap.Instructions, Status: a.Status, Navigation: snap.Navigation,
 		SectionMode: snap.SectionMode, SecurityProfile: snap.SecurityProfile, Settings: snap.Settings,
 		StartedAt: a.StartedAt, DeadlineAt: a.DeadlineAt, ServerTime: s.now().UTC(), Sections: []modelAttempt.SectionView{},
 	}

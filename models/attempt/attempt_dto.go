@@ -110,6 +110,7 @@ type SectionView struct {
 // AttemptView is the exam as the participant takes it.
 type AttemptView struct {
 	ID              string          `json:"id"`
+	SessionID       string          `json:"session_id"`
 	ExamTitle       string          `json:"exam_title"`
 	Instructions    *string         `json:"instructions"`
 	Status          Status          `json:"status"`
