@@ -2,10 +2,15 @@ package attempt
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
+	modelAttempt "doexam/models/attempt"
+	modelAudit "doexam/models/audit"
+	modelAuth "doexam/models/auth"
 	modelMedia "doexam/models/media"
+	"doexam/pkg/errr"
 )
 
 type fakeLinker struct{ asked []string }
@@ -37,5 +42,15 @@ func TestMediaRefs(t *testing.T) {
 	// tests build the service without a linker
 	if refs, err := (&AttemptService{}).mediaRefs(context.Background(), "t1", `<img data-media-id="`+a+`">`); err != nil || len(refs) != 0 {
 		t.Fatalf("nil linker: %v %v", refs, err)
+	}
+}
+
+func TestGrantPlaysValidates(t *testing.T) {
+	svc := &AttemptService{}
+	for _, n := range []int{0, -1, 6} {
+		var ve *errr.ValidationError
+		if _, err := svc.GrantPlays(context.Background(), modelAuth.Principal{}, "x", modelAttempt.GrantPlaysInput{Plays: n}, modelAudit.Client{}); !errors.As(err, &ve) || ve.Fields["plays"] == "" {
+			t.Errorf("plays=%d: err = %v, want plays error", n, err)
+		}
 	}
 }

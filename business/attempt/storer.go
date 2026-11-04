@@ -103,6 +103,8 @@ type AttemptStorer interface {
 	SaveScores(ctx context.Context, items []modelAttempt.AttemptItemEntity) error
 	// LatestManualScores returns the newest manual grade per attempt item (only items that have one).
 	LatestManualScores(ctx context.Context, itemIDs []string) (map[string]*float64, error)
+	// MediaPlays counts MEDIA_PLAYED events per media id and sums MEDIA_PLAYS_GRANTED plays.
+	MediaPlays(ctx context.Context, attemptID string) (map[string]int, int, error)
 	// InsertEvent appends an event; false when its client_event_id was already stored.
 	InsertEvent(ctx context.Context, e *modelAttempt.EventEntity) (bool, error)
 

@@ -135,6 +135,18 @@ func (s *AttemptService) checkEvent(ev modelAttempt.ClientEvent, a modelAttempt.
 	if now.After(a.DeadlineAt) && (ev.ClientTS == nil || ev.ClientTS.After(a.DeadlineAt)) {
 		return "after_deadline", nil
 	}
+	if ev.Type == modelAttempt.EventMediaPlayed {
+		var body struct {
+			MediaID string `json:"media_id"`
+			PlayNo  int    `json:"play_no"`
+		}
+		if json.Unmarshal(ev.Payload, &body) != nil || uuid.Validate(body.MediaID) != nil || body.PlayNo < 1 || body.PlayNo > 1000 {
+			return "payload must be {\"media_id\": uuid, \"play_no\": 1-1000}", nil
+		}
+		// Recorded even past the limit: the clip already played on the device, and the
+		// count is what the proctor needs to see.
+		return "", nil
+	}
 	itemEvent := ev.Type == modelAttempt.EventResponseSaved || ev.Type == modelAttempt.EventFlagSet || ev.Type == modelAttempt.EventItemViewed
 	if !itemEvent {
 		return "", nil

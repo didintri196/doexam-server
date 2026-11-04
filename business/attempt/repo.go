@@ -254,6 +254,33 @@ func (r *AttemptRepo) LatestManualScores(ctx context.Context, itemIDs []string) 
 	return out, wrap(err, "latest manual scores")
 }
 
+func (r *AttemptRepo) MediaPlays(ctx context.Context, attemptID string) (map[string]int, int, error) {
+	var rows []struct {
+		MediaID string
+		N       int
+	}
+	err := dbpg.Conn(ctx, r.db).Table("attempt_events").
+		Select("payload->>'media_id' AS media_id, count(*) AS n").
+		Where("attempt_id = ? AND type = ?", attemptID, modelAttempt.EventMediaPlayed).
+		Group("payload->>'media_id'").Scan(&rows).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("media plays of attempt %s: %w", attemptID, err)
+	}
+	out := make(map[string]int, len(rows))
+	for _, r := range rows {
+		out[r.MediaID] = r.N
+	}
+	var extra int
+	err = dbpg.Conn(ctx, r.db).Table("attempt_events").
+		Select("COALESCE(SUM((payload->>'plays')::int), 0)").
+		Where("attempt_id = ? AND type = ?", attemptID, modelAttempt.EventMediaPlaysGranted).
+		Scan(&extra).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("granted plays of attempt %s: %w", attemptID, err)
+	}
+	return out, extra, nil
+}
+
 func (r *AttemptRepo) InsertEvent(ctx context.Context, e *modelAttempt.EventEntity) (bool, error) {
 	if len(e.Payload) == 0 {
 		e.Payload = []byte("{}")

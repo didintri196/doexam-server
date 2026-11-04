@@ -55,6 +55,12 @@ type ExtendInput struct {
 	Minutes int `json:"minutes"`
 }
 
+// GrantPlaysInput is the body of POST /api/v1/attempts/:id/grant-plays: extra plays for
+// every audio clip with a play limit (e.g. the speaker failed).
+type GrantPlaysInput struct {
+	Plays int `json:"plays"`
+}
+
 // ---- delivery (participant view: never contains answer keys) ----
 
 // OptionView is one displayed option.
@@ -114,6 +120,10 @@ type AttemptView struct {
 	Sections        []SectionView   `json:"sections"`
 	// Media maps every data-media-id in the delivered items to a signed link.
 	Media map[string]modelMedia.Ref `json:"media"`
+	// MediaPlays counts the plays recorded per audio clip (data-media-id); ExtraPlays is
+	// added by proctors to every clip's data-max-plays.
+	MediaPlays map[string]int `json:"media_plays"`
+	ExtraPlays int            `json:"extra_plays"`
 }
 
 // ---- results ----

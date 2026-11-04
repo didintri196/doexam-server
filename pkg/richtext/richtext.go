@@ -30,6 +30,8 @@ var (
 	langRe  = regexp.MustCompile(`^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$`)
 	anyRe   = regexp.MustCompile(`(?s)^.{0,1000}$`) // RE2 caps repeat counts at 1000
 	spaceRe = regexp.MustCompile(`\s+`)
+	playsRe = regexp.MustCompile(`^([1-9]|10)$`)
+	boolRe  = regexp.MustCompile(`^(true|false)$`)
 )
 
 var policy = newPolicy()
@@ -45,6 +47,9 @@ func newPolicy() *bluemonday.Policy {
 	p.AllowAttrs("data-media-id").Matching(uuidRe).OnElements("img", "audio", "video", "source")
 	p.AllowAttrs("alt").Matching(anyRe).OnElements("img")
 	p.AllowAttrs("controls").OnElements("audio", "video")
+	// listening tests: how often a clip may be played and whether it may be paused
+	p.AllowAttrs("data-max-plays").Matching(playsRe).OnElements("audio")
+	p.AllowAttrs("data-allow-pause").Matching(boolRe).OnElements("audio")
 	p.AllowAttrs("colspan", "rowspan").Matching(spanRe).OnElements("td", "th")
 	p.AllowAttrs("dir").Matching(dirRe).Globally()
 	p.AllowAttrs("lang").Matching(langRe).Globally()

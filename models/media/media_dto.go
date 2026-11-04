@@ -3,6 +3,21 @@ package media
 // MaxImageBytes bounds an uploaded image (POST /api/v1/media).
 const MaxImageBytes = 5 << 20
 
+// MaxAudioBytes bounds an uploaded audio clip (listening sections run a few minutes).
+const MaxAudioBytes = 20 << 20
+
+// MaxUploadBytes is the largest upload of any kind (the handler reads one byte more).
+const MaxUploadBytes = MaxAudioBytes
+
+// AudioTypes maps the accepted audio types to the stored extension: MP3, M4A/AAC, Ogg
+// (Vorbis/Opus) and WAV play in every current browser.
+var AudioTypes = map[string]string{
+	"audio/mpeg": "mp3",
+	"audio/mp4":  "m4a",
+	"audio/ogg":  "ogg",
+	"audio/wav":  "wav",
+}
+
 // MaxLinks bounds POST /api/v1/media/links.
 const MaxLinks = 500
 

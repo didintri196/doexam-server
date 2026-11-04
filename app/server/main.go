@@ -72,7 +72,7 @@ func main() {
 	// ── 5. Fiber app ───────────────────────────────────────────
 	app := fiber.New(fiber.Config{
 		AppName:      "DoExam API",
-		BodyLimit:    8 << 20, // 8 MiB: import files are capped at 5 MiB by the service
+		BodyLimit:    24 << 20, // 24 MiB: audio clips are capped at 20 MiB, imports at 5 MiB, by the services
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
