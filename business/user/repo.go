@@ -98,6 +98,14 @@ func (r *UserRepo) List(ctx context.Context, f modelUser.ListFilter) ([]modelAut
 		q = q.Where(`EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
 			WHERE ur.user_id = users.id AND r.code = ?)`, f.RoleCode)
 	}
+	switch f.Kind {
+	case modelUser.KindParticipant:
+		q = q.Where(`EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+			WHERE ur.user_id = users.id AND ? = ANY(r.permissions))`, modelAuth.PermAttemptTake)
+	case modelUser.KindStaff:
+		q = q.Where(`EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+			WHERE ur.user_id = users.id AND EXISTS (SELECT 1 FROM unnest(r.permissions) perm WHERE perm <> ?))`, modelAuth.PermAttemptTake)
+	}
 	if f.GroupID != "" {
 		q = q.Where("EXISTS (SELECT 1 FROM group_members gm WHERE gm.user_id = users.id AND gm.group_id = ?)", f.GroupID)
 	}

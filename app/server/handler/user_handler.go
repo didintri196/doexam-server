@@ -43,7 +43,7 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 	}
 	f := modelUser.ListFilter{
 		Page: page, PerPage: perPage, Query: c.Query("q"), RoleCode: c.Query("role"),
-		GroupID: c.Query("group_id"), Status: modelAuth.UserStatus(c.Query("status")),
+		GroupID: c.Query("group_id"), Status: modelAuth.UserStatus(c.Query("status")), Kind: modelUser.UserKind(c.Query("kind")),
 	}
 	users, total, err := h.userSvc.List(c.UserContext(), principal(c), f)
 	if err != nil {
