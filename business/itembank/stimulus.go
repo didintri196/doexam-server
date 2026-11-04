@@ -78,6 +78,24 @@ func (s *ItemBankService) CreateStimulus(ctx context.Context, p modelAuth.Princi
 		return modelBank.StimulusDTO{}, fail(span, err)
 	}
 
+	var out modelBank.StimulusDTO
+	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
+		if _, _, err := s.bankAccess(ctx, p, bankID, levelWrite); err != nil {
+			return err
+		}
+		var err error
+		out, err = s.insertStimulus(ctx, p, bankID, title, body, client)
+		return err
+	})
+	if err != nil {
+		return modelBank.StimulusDTO{}, fail(span, err)
+	}
+	return out, nil
+}
+
+// insertStimulus stores a validated stimulus with its audit entry, inside the caller's
+// tenant transaction after the bank access check.
+func (s *ItemBankService) insertStimulus(ctx context.Context, p modelAuth.Principal, bankID, title, body string, client modelAudit.Client) (modelBank.StimulusDTO, error) {
 	now := s.now().UTC()
 	st := modelBank.StimulusEntity{ID: newID(), TenantID: p.TenantID, BankID: bankID, Title: title, CreatedBy: &p.UserID, CreatedAt: now, UpdatedAt: now}
 	ver := modelBank.StimulusVersionEntity{
@@ -86,22 +104,14 @@ func (s *ItemBankService) CreateStimulus(ctx context.Context, p modelAuth.Princi
 	}
 	st.CurrentVersionID = &ver.ID
 	row := StimulusRow{StimulusEntity: st, VersionNo: 1, Content: ver.Content}
-	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
-		if _, _, err := s.bankAccess(ctx, p, bankID, levelWrite); err != nil {
-			return err
-		}
-		if err := s.checkMedia(ctx, "body", body); err != nil {
-			return err
-		}
-		if err := s.storer.CreateStimulus(ctx, &st, &ver); err != nil {
-			return err
-		}
-		return s.audit(ctx, p, client, modelAudit.ActionStimulusCreate, "stimulus", st.ID, nil, toStimulusDTO(row))
-	})
-	if err != nil {
-		return modelBank.StimulusDTO{}, fail(span, err)
+	if err := s.checkMedia(ctx, "body", body); err != nil {
+		return modelBank.StimulusDTO{}, err
 	}
-	return toStimulusDTO(row), nil
+	if err := s.storer.CreateStimulus(ctx, &st, &ver); err != nil {
+		return modelBank.StimulusDTO{}, err
+	}
+	dto := toStimulusDTO(row)
+	return dto, s.audit(ctx, p, client, modelAudit.ActionStimulusCreate, "stimulus", st.ID, nil, dto)
 }
 
 // UpdateStimulus changes the title and/or body. Changing the body of a locked version

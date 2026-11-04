@@ -123,7 +123,7 @@ func newFixture(t *testing.T, access modelBank.Access, locked bool) (*ItemBankSe
 		item:     modelBank.ItemEntity{ID: itemID, BankID: bankID, Status: modelBank.StatusActive, CurrentVersionID: ptr(verID)},
 		versions: map[string]modelBank.ItemVersionEntity{verID: v},
 	}
-	return NewItemBankService(store, fakeTx{}, slog.New(slog.NewTextHandler(io.Discard, nil))), store
+	return NewItemBankService(store, fakeTx{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil))), store
 }
 
 func ptr[T any](v T) *T { return &v }

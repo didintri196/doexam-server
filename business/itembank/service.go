@@ -30,6 +30,7 @@ var errBankNotFound = errr.WithMessage(errr.ErrNotFound, "item bank not found")
 // tenant.manage (admin) counts as owner of every bank. Banks the caller cannot
 // access are reported as not found, so their existence does not leak.
 type ItemBankService struct {
+	media  MediaStore // pictures of imported Word documents
 	storer ItemBankStorer
 	tx     TxManager
 	now    func() time.Time
@@ -38,8 +39,8 @@ type ItemBankService struct {
 }
 
 // NewItemBankService returns a concrete ItemBankService.
-func NewItemBankService(storer ItemBankStorer, tx TxManager, logger *slog.Logger) *ItemBankService {
-	return &ItemBankService{storer: storer, tx: tx, now: time.Now, tracer: otel.Tracer("doexam.service.itembank"), logger: logger}
+func NewItemBankService(storer ItemBankStorer, tx TxManager, media MediaStore, logger *slog.Logger) *ItemBankService {
+	return &ItemBankService{storer: storer, tx: tx, media: media, now: time.Now, tracer: otel.Tracer("doexam.service.itembank"), logger: logger}
 }
 
 // level is the access a call needs.

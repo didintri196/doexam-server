@@ -2,6 +2,8 @@ package itembank
 
 import (
 	"context"
+	modelAuth "doexam/models/auth"
+	modelMedia "doexam/models/media"
 	"time"
 
 	modelAudit "doexam/models/audit"
@@ -38,6 +40,8 @@ type ItemBankStorer interface {
 	CountItems(ctx context.Context, bankID string) (int64, error)
 	SubjectExists(ctx context.Context, id string) (bool, error)
 	CompetencyInSubject(ctx context.Context, competencyID, subjectID string) (bool, error)
+	// CompetencyIDsByCode maps lower-cased competency codes of a subject to their ids.
+	CompetencyIDsByCode(ctx context.Context, subjectID string) (map[string]string, error)
 
 	// members
 	ListMembers(ctx context.Context, bankID string) ([]modelBank.MemberDTO, error)
@@ -73,6 +77,12 @@ type ItemBankStorer interface {
 	SoftDeleteItem(ctx context.Context, id string) error
 
 	CreateAuditLog(ctx context.Context, log *modelAudit.AuditLogEntity) error
+}
+
+// MediaStore stores pictures found in imported documents (business/media). It opens its
+// own transaction, so it is called outside the item bank transaction.
+type MediaStore interface {
+	Upload(ctx context.Context, p modelAuth.Principal, filename string, data []byte, client modelAudit.Client) (modelMedia.MediaDTO, error)
 }
 
 // TxManager runs fn inside a transaction scoped to tenantID.

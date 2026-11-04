@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"io"
+
 	"github.com/gofiber/fiber/v2"
 
 	"doexam/business/itembank"
 	modelBank "doexam/models/itembank"
+	"doexam/pkg/errr"
 	"doexam/pkg/middleware"
 )
 
@@ -252,4 +255,45 @@ func (h *ItemBankHandler) ListVersions(c *fiber.Ctx) error {
 		return handleError(c, logger, "failed to list item versions", err)
 	}
 	return SuccessResponse(c, fiber.StatusOK, "item versions retrieved", out)
+}
+
+// ImportWord handles POST /api/v1/item-banks/:id/import-word (multipart "file", .docx).
+// ?preview=1 only reads the document; otherwise the valid items are created as drafts.
+func (h *ItemBankHandler) ImportWord(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return handleError(c, logger, "missing file", &errr.ValidationError{Fields: map[string]string{"file": "required"}})
+	}
+	f, err := fh.Open()
+	if err != nil {
+		return handleError(c, logger, "failed to open upload", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, modelBank.MaxWordBytes+1))
+	if err != nil {
+		return handleError(c, logger, "failed to read upload", err)
+	}
+	commit := c.Query("preview") == ""
+	dto, err := h.bankSvc.ImportWord(c.UserContext(), principal(c), c.Params("id"), fh.Filename, data, commit, clientInfo(c))
+	if err != nil {
+		return handleError(c, logger, "failed to import word document", err)
+	}
+	if commit {
+		return SuccessResponse(c, fiber.StatusCreated, "items imported", dto)
+	}
+	return SuccessResponse(c, fiber.StatusOK, "word document read", dto)
+}
+
+// WordTemplate handles GET /api/v1/item-banks/import-word/template (.docx download).
+func (h *ItemBankHandler) WordTemplate(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+	data, err := itembank.WordTemplate()
+	if err != nil {
+		return handleError(c, logger, "failed to build word template", err)
+	}
+	c.Set(fiber.HeaderContentType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	c.Set(fiber.HeaderContentDisposition, `attachment; filename="template-impor-soal.docx"`)
+	return c.Status(fiber.StatusOK).Send(data)
 }
