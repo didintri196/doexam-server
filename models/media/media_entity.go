@@ -11,6 +11,8 @@ type MediaFileEntity struct {
 	MimeType     string  `gorm:"not null"`
 	SizeBytes    int64   `gorm:"not null"`
 	SHA256       []byte  `gorm:"column:sha256;not null"`
+	Width        *int    // images only
+	Height       *int    // images only
 	UploadedBy   *string `gorm:"type:uuid"`
 	CreatedAt    time.Time
 }

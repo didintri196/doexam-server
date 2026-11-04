@@ -26,6 +26,9 @@ type DoExamConfig struct {
 
 	// File storage (uploads); local directory for now
 	StorageDir string
+	// MediaSigningKey signs media links (hex/base64, ≥16 bytes). Empty: a key is generated
+	// once and kept in storage (system/media-signing.key).
+	MediaSigningKey string
 
 	// OTEL (tracing disabled when OTELEndpoint is empty)
 	OTELEndpoint string
@@ -36,13 +39,14 @@ type DoExamConfig struct {
 func Load() *Config {
 	return &Config{
 		DoExam: DoExamConfig{
-			ServerPort:   getEnv("PORT", "8080"),
-			Environment:  getEnv("APP_ENV", "development"),
-			DatabaseURL:  getEnv("DATABASE_URL", defaultDatabaseURL),
-			SessionTTL:   getDuration("AUTH_SESSION_TTL", 12*time.Hour),
-			StorageDir:   getEnv("STORAGE_DIR", "./data/storage"),
-			OTELEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-			OTELService:  getEnv("OTEL_SERVICE_NAME", "doexam-api"),
+			ServerPort:      getEnv("PORT", "8080"),
+			Environment:     getEnv("APP_ENV", "development"),
+			DatabaseURL:     getEnv("DATABASE_URL", defaultDatabaseURL),
+			SessionTTL:      getDuration("AUTH_SESSION_TTL", 12*time.Hour),
+			StorageDir:      getEnv("STORAGE_DIR", "./data/storage"),
+			MediaSigningKey: os.Getenv("MEDIA_SIGNING_KEY"),
+			OTELEndpoint:    os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+			OTELService:     getEnv("OTEL_SERVICE_NAME", "doexam-api"),
 		},
 	}
 }

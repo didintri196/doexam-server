@@ -158,6 +158,9 @@ func (s *ItemBankService) CreateItem(ctx context.Context, p modelAuth.Principal,
 		if err := s.resolveRefs(ctx, bank, in.VersionInput, &ver); err != nil {
 			return err
 		}
+		if err := s.checkItemMedia(ctx, ver); err != nil {
+			return err
+		}
 		if err := s.storer.CreateItem(ctx, &it, &ver); err != nil {
 			return err
 		}
@@ -230,6 +233,9 @@ func (s *ItemBankService) UpdateItem(ctx context.Context, p modelAuth.Principal,
 		}
 		if !samePtr(prevStimulus, next.StimulusVersionID) {
 			changed = true
+		}
+		if err := s.checkItemMedia(ctx, next); err != nil {
+			return err
 		}
 
 		if changed && cur.LockedAt != nil {
@@ -447,4 +453,12 @@ func preview(s *string) string {
 	}
 	r := []rune(*s)
 	return string(r[:previewRunes]) + "…"
+}
+
+// checkItemMedia checks the media referenced by content, answer key and explanation.
+func (s *ItemBankService) checkItemMedia(ctx context.Context, ver modelBank.ItemVersionEntity) error {
+	if err := s.checkMedia(ctx, "content", string(ver.Content), string(ver.AnswerKey)); err != nil {
+		return err
+	}
+	return s.checkMedia(ctx, "explanation", string(ver.Explanation))
 }

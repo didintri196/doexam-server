@@ -20,6 +20,7 @@ import (
 	"doexam/business/health"
 	"doexam/business/importer"
 	"doexam/business/itembank"
+	"doexam/business/media"
 	"doexam/business/report"
 	"doexam/business/session"
 	"doexam/business/subject"
@@ -28,6 +29,7 @@ import (
 	"doexam/config"
 	modelImport "doexam/models/importer"
 	dbpg "doexam/pkg/db-pg"
+	"doexam/pkg/mediaurl"
 	"doexam/pkg/middleware"
 	"doexam/pkg/password"
 	"doexam/pkg/storage"
@@ -55,6 +57,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	sessionRepo := session.NewSessionRepo(db)
 	attemptRepo := attempt.NewAttemptRepo(db)
 	reportRepo := report.NewReportRepo(db)
+	mediaRepo := media.NewMediaRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0)
@@ -65,9 +68,16 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 		return nil, err
 	}
 	credentialVault := ttlcache.New[[]modelImport.Credential](credentialTTL)
+	mediaKey, err := mediaSigningKey(context.Background(), cfg.MediaSigningKey, fileStore)
+	if err != nil {
+		return nil, err
+	}
+	// Links live ≥12 h (a long exam day) and change once an hour, so caches can reuse them.
+	mediaSigner := mediaurl.NewSigner(mediaKey, 12*time.Hour, time.Hour)
 
 	// ── Services (Core) ────────────────────────────────────────
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
+	mediaSvc := media.NewMediaService(mediaRepo, txManager, fileStore, mediaSigner, logger)
 	tenantSvc := tenant.NewTenantService(tenantRepo, txManager, hasher, fileStore, logger)
 	authSvc := auth.NewAuthService(authRepo, txManager, hasher, cfg.SessionTTL, logger)
 	userSvc := user.NewUserService(userRepo, txManager, hasher, logger)
@@ -76,7 +86,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	subjectSvc := subject.NewSubjectService(subjectRepo, txManager, logger)
 	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, logger)
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
-	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, logger)
+	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, logger)
 	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, logger)
 	reportSvc := report.NewReportService(reportRepo, txManager, logger)
 
@@ -94,6 +104,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	attemptHandler := handler.NewAttemptHandler(attemptSvc)
 	gradingHandler := handler.NewGradingHandler(attemptSvc)
 	reportHandler := handler.NewReportHandler(reportSvc)
+	mediaHandler := handler.NewMediaHandler(mediaSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	app.Use(recover.New())
@@ -126,6 +137,10 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 
 	v1.Get("/public/tenant", tenantHandler.Public)
 	v1.Get("/public/tenant/logo", tenantHandler.Logo)
+	// Signed links work without login (<img> cannot send the Authorization header).
+	v1.Get("/media/:id", mediaHandler.Serve)
+	v1.Post("/media", requireAuth, mediaHandler.Upload)
+	v1.Post("/media/links", requireAuth, mediaHandler.Links)
 
 	v1.Get("/tenant", requireAuth, tenantHandler.Current)
 	v1.Patch("/tenant", requireAuth, tenantHandler.Update)

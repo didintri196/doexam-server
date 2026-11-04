@@ -90,6 +90,9 @@ func (s *ItemBankService) CreateStimulus(ctx context.Context, p modelAuth.Princi
 		if _, _, err := s.bankAccess(ctx, p, bankID, levelWrite); err != nil {
 			return err
 		}
+		if err := s.checkMedia(ctx, "body", body); err != nil {
+			return err
+		}
 		if err := s.storer.CreateStimulus(ctx, &st, &ver); err != nil {
 			return err
 		}
@@ -132,6 +135,9 @@ func (s *ItemBankService) UpdateStimulus(ctx context.Context, p modelAuth.Princi
 			row.Title = title
 		}
 		if in.Body != nil && body != before.Body {
+			if err := s.checkMedia(ctx, "body", body); err != nil {
+				return err
+			}
 			content := mustJSON(modelBank.StimulusContent{Body: body})
 			if row.LockedAt == nil {
 				if err := s.storer.UpdateStimulusContent(ctx, *row.CurrentVersionID, content); err != nil {

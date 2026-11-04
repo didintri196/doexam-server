@@ -1,6 +1,7 @@
 package attempt
 
 import (
+	modelMedia "doexam/models/media"
 	"encoding/json"
 	"time"
 )
@@ -111,6 +112,8 @@ type AttemptView struct {
 	DeadlineAt      time.Time       `json:"deadline_at"`
 	ServerTime      time.Time       `json:"server_time"`
 	Sections        []SectionView   `json:"sections"`
+	// Media maps every data-media-id in the delivered items to a signed link.
+	Media map[string]modelMedia.Ref `json:"media"`
 }
 
 // ---- results ----
@@ -135,6 +138,8 @@ type ResultDTO struct {
 	Passed        *bool        `json:"passed,omitempty"`
 	PendingManual int          `json:"pending_manual"`
 	Items         []ItemResult `json:"items,omitempty"`
+	// Media maps every data-media-id in the explanations to a signed link.
+	Media map[string]modelMedia.Ref `json:"media,omitempty"`
 }
 
 // MyAttemptDTO is one row of GET /api/v1/my/attempts.

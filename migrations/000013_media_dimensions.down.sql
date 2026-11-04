@@ -1,0 +1,1 @@
+ALTER TABLE media_files DROP COLUMN IF EXISTS width, DROP COLUMN IF EXISTS height;

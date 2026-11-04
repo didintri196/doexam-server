@@ -47,6 +47,8 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | 9 | `create_audit_logs` | audit_logs |
 | 10 | `create_exam_rule_pool` | exam_rule_pool (snapshot kandidat aturan blueprint saat terbit) |
 | 11 | `add_attempt_item_response_seq` | attempt_items.response_seq (jawaban lama tidak menimpa yang baru) |
+| 12 | `neutral_role_names` | Nama peran bawaan netral (Penyusun Soal, Peserta); default `tenants.preset` = `custom` |
+| 13 | `media_dimensions` | media_files.width, media_files.height (ukuran gambar) |
 
 > **Penting (RLS):** isolasi tenant memakai Row-Level Security, yang **tidak berlaku untuk pemilik tabel**. Di staging/production, jalankan migrasi dengan role pemilik, tapi koneksikan aplikasi dengan role terpisah:
 > ```sql
@@ -67,6 +69,9 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | POST | `/api/v1/auth/login` | Login `{username, password}` → token sesi. `tenant` (slug) hanya wajib bila instalasi melayani lebih dari satu institusi |
 | GET | `/api/v1/public/tenant` | Tanpa login, untuk layar login & header klien: nama, `tagline`, preset, locale, warna, `logo_url`. Query `tenant` opsional (wajib bila > 1 institusi). 404 `setup not completed` sebelum setup |
 | GET | `/api/v1/public/tenant/logo` | Tanpa login: file logo (PNG/JPEG/WebP), dengan `ETag` + cache 1 hari. Query `tenant` opsional |
+| POST | `/api/v1/media` 🔒 `item.write` | Unggah gambar soal (multipart `file`; PNG/JPEG/GIF/WebP ≤5 MB, jenis dibaca dari isi; SVG ditolak). File sama → id lama. → `{id, mime_type, size_bytes, width, height, url}`. Sisipkan di HTML sebagai `<img data-media-id="…">` |
+| POST | `/api/v1/media/links` 🔒 `item.read`/`item.write`/`exam.read`/`grade.write`/`report.read` | `{ids[≤500]}` → `{<id>: {url, mime, w, h}}`, link bertanda tangan untuk media di konten yang sedang dibuka. Id tak dikenal dilewati |
+| GET | `/api/v1/media/:id?t&e&s` | Tanpa login: isi file lewat link bertanda tangan (HMAC tenant+file+kedaluwarsa, ≥12 jam, berganti per jam). Link salah/kedaluwarsa → 404. `Cache-Control: private, immutable` |
 | GET | `/api/v1/auth/me` 🔒 | Profil, tenant, peran, dan izin pengguna yang login |
 | POST | `/api/v1/auth/logout` 🔒 | Cabut sesi saat ini |
 | POST | `/api/v1/auth/change-password` 🔒 | Ganti password; sesi lain milik user ikut dicabut |
@@ -232,7 +237,8 @@ Target `db/migrations/*` membaca `DATABASE_URL` dari `.env` (atau environment).
 | `APP_ENV` | `development` | `development` / `staging` / `production` |
 | `PORT` | `8080` | Port server |
 | `DATABASE_URL` | `postgres://doexam:secret@localhost:5433/doexam?sslmode=disable` | DSN PostgreSQL (wajib di-set di production) |
-| `STORAGE_DIR` | `./data/storage` | Folder file upload (impor; nanti media soal). Di Docker: volume `storage` |
+| `STORAGE_DIR` | `./data/storage` | Folder file upload (impor, logo, media soal). Di Docker: volume `storage` |
+| `MEDIA_SIGNING_KEY` | _(dibuat otomatis)_ | Kunci HMAC link media (hex/base64, ≥16 byte). Kosong = dibuat sekali lalu disimpan di `STORAGE_DIR/system/media-signing.key`. Wajib sama di semua instance bila server lebih dari satu |
 | `AUTH_SESSION_TTL` | `12h` | Masa berlaku sesi login (format durasi Go: `12h`, `90m`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(kosong)_ | Endpoint OTLP gRPC; kosong = tracing mati |
 | `OTEL_SERVICE_NAME` | `doexam-api` | Nama service di tracing |

@@ -56,6 +56,17 @@ func (r *ItemBankRepo) ListBanks(ctx context.Context, f modelBank.BankFilter, us
 	return rows, total, nil
 }
 
+func (r *ItemBankRepo) ExistingMediaIDs(ctx context.Context, ids []string) ([]string, error) {
+	var found []string
+	if len(ids) == 0 {
+		return found, nil
+	}
+	if err := dbpg.Conn(ctx, r.db).Table("media_files").Where("id IN ?", ids).Pluck("id", &found).Error; err != nil {
+		return nil, fmt.Errorf("existing media: %w", err)
+	}
+	return found, nil
+}
+
 func (r *ItemBankRepo) FindBank(ctx context.Context, id string) (modelBank.BankEntity, error) {
 	var b modelBank.BankEntity
 	if err := dbpg.Conn(ctx, r.db).Where("id = ?", id).First(&b).Error; err != nil {

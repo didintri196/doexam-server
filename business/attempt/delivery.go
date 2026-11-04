@@ -2,6 +2,8 @@ package attempt
 
 import (
 	"context"
+	modelMedia "doexam/models/media"
+	"doexam/pkg/richtext"
 	"encoding/json"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -86,7 +88,35 @@ func (s *AttemptService) view(ctx context.Context, a modelAttempt.AttemptEntity)
 		}
 		out.Sections = append(out.Sections, sv)
 	}
+	var html []string
+	for _, sec := range out.Sections {
+		for _, it := range sec.Items {
+			html = append(html, it.Stem)
+			for _, o := range it.Options {
+				html = append(html, o.Body)
+			}
+			if it.Stimulus != nil {
+				html = append(html, it.Stimulus.Body)
+			}
+		}
+	}
+	if out.Media, err = s.mediaRefs(ctx, a.TenantID, html...); err != nil {
+		return modelAttempt.AttemptView{}, err
+	}
 	return out, nil
+}
+
+// mediaRefs signs links for every data-media-id in html. The exam client downloads them
+// when the attempt starts, so pictures stay visible if the network drops.
+func (s *AttemptService) mediaRefs(ctx context.Context, tenantID string, html ...string) (map[string]modelMedia.Ref, error) {
+	var ids []string
+	for _, h := range html {
+		ids = append(ids, richtext.MediaIDs(h)...)
+	}
+	if s.media == nil || len(ids) == 0 {
+		return map[string]modelMedia.Ref{}, nil
+	}
+	return s.media.Refs(ctx, tenantID, ids)
 }
 
 // itemView strips an item down to what the participant may see, with options in their order.

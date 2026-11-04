@@ -26,6 +26,8 @@ type StimulusRow struct {
 // ItemBankStorer is the persistence port for banks, stimuli and items.
 // Every method must run inside TxManager.WithTenant.
 type ItemBankStorer interface {
+	// ExistingMediaIDs returns which of ids are media files of the tenant.
+	ExistingMediaIDs(ctx context.Context, ids []string) ([]string, error)
 	// banks
 	ListBanks(ctx context.Context, f modelBank.BankFilter, userID string, all bool) ([]BankRow, int64, error)
 	FindBank(ctx context.Context, id string) (modelBank.BankEntity, error)

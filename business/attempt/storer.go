@@ -2,6 +2,7 @@ package attempt
 
 import (
 	"context"
+	modelMedia "doexam/models/media"
 	"time"
 
 	modelAttempt "doexam/models/attempt"
@@ -124,6 +125,12 @@ type AttemptStorer interface {
 	RunningAttempts(ctx context.Context, sessionID string) ([]modelAttempt.AttemptEntity, error)
 	Monitor(ctx context.Context, sessionID string) ([]MonitorAttempt, error)
 	MyAttempts(ctx context.Context, userID string) ([]modelAttempt.MyAttemptDTO, error)
+}
+
+// MediaLinker signs links for media referenced by item HTML (business/media). It runs
+// inside the caller's tenant transaction.
+type MediaLinker interface {
+	Refs(ctx context.Context, tenantID string, ids []string) (map[string]modelMedia.Ref, error)
 }
 
 // TxManager runs fn inside a transaction scoped to tenantID.

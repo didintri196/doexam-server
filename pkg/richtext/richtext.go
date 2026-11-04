@@ -6,6 +6,7 @@ package richtext
 import (
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
@@ -107,4 +108,25 @@ func isBlock(tag string) bool {
 		return true
 	}
 	return false
+}
+
+// MediaIDs returns the distinct data-media-id values in html, in order of appearance.
+func MediaIDs(html string) []string {
+	var out []string
+	rest := html
+	for {
+		i := strings.Index(rest, `data-media-id="`)
+		if i < 0 {
+			return out
+		}
+		rest = rest[i+len(`data-media-id="`):]
+		j := strings.IndexByte(rest, '"')
+		if j < 0 {
+			return out
+		}
+		if id := rest[:j]; uuidRe.MatchString(id) && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+		rest = rest[j:]
+	}
 }
