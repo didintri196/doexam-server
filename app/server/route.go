@@ -136,6 +136,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	authGroup.Post("/change-password", requireAuth, authHandler.ChangePassword)
 
 	v1.Get("/public/tenant", tenantHandler.Public)
+	v1.Get("/public/templates/:name", handler.PublicTemplate)
 	v1.Get("/public/tenant/logo", tenantHandler.Logo)
 	// Signed links work without login (<img> cannot send the Authorization header).
 	v1.Get("/media/:id", mediaHandler.Serve)
