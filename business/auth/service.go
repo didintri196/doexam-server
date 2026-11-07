@@ -231,6 +231,9 @@ func (s *AuthService) authenticate(ctx context.Context, token string) (modelAuth
 	if !found || uuid.Validate(tenantID) != nil {
 		return modelAuth.Principal{}, errr.ErrUnauthorized
 	}
+	// the principal is cached past this call: own the tenant ID instead of pointing into
+	// the caller's token, which may be a borrowed request buffer
+	tenantID = strings.Clone(tenantID)
 
 	hash := securetoken.Hash(token)
 	key := string(hash)
