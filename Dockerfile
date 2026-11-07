@@ -6,13 +6,16 @@
 #   docker run --rm -e DATABASE_URL=... doexam-server migrate up
 #   docker run -p 8080:8080 -e DATABASE_URL=... doexam-server
 
-FROM golang:1.26-alpine AS builder
+# cross-compile on the build platform (no QEMU): Go needs no emulation for other arches
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 ARG VERSION=dev
+ARG TARGETOS=linux
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/doexam ./app/server
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/doexam ./app/server
 
 FROM alpine:3.22
 RUN apk --no-cache add ca-certificates tzdata && adduser -D -H -u 10001 doexam \
