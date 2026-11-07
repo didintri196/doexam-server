@@ -44,20 +44,23 @@ type AuthService struct {
 	now        func() time.Time
 	tracer     trace.Tracer
 	logger     *slog.Logger
+	metrics    *authMetrics // nil in tests that build the struct directly
 }
 
 // NewAuthService returns a concrete AuthService.
 // cacheTTL is how long a resolved token is trusted without reading the database (0 disables).
 func NewAuthService(storer AuthStorer, tx TxManager, hasher PasswordHasher, sessionTTL, cacheTTL time.Duration, logger *slog.Logger) *AuthService {
+	principals := newPrincipalCache(cacheTTL)
 	return &AuthService{
 		storer:     storer,
 		tx:         tx,
 		hasher:     hasher,
 		sessionTTL: sessionTTL,
-		principals: newPrincipalCache(cacheTTL),
+		principals: principals,
 		now:        time.Now,
 		tracer:     otel.Tracer("doexam.service.auth"),
 		logger:     logger,
+		metrics:    newAuthMetrics(principals),
 	}
 }
 
@@ -91,7 +94,9 @@ func (s *AuthService) Login(ctx context.Context, in modelAuth.LoginInput, client
 	ctx, span := s.tracer.Start(ctx, "AuthService.Login")
 	defer span.End()
 
-	dto, err := s.login(ctx, in, client)
+	var result string
+	dto, err := s.login(ctx, in, client, &result)
+	s.metrics.login(ctx, loginResult(err, result))
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		span.RecordError(err)
@@ -101,7 +106,8 @@ func (s *AuthService) Login(ctx context.Context, in modelAuth.LoginInput, client
 	return dto, nil
 }
 
-func (s *AuthService) login(ctx context.Context, in modelAuth.LoginInput, client modelAudit.Client) (modelAuth.LoginDTO, error) {
+// login sets *result to the reason of a rejected login (see loginResult).
+func (s *AuthService) login(ctx context.Context, in modelAuth.LoginInput, client modelAudit.Client, result *string) (modelAuth.LoginDTO, error) {
 	in.Normalize()
 	v := errr.Validation{}
 	v.Check(in.Username != "", "username", "required")
@@ -113,6 +119,7 @@ func (s *AuthService) login(ctx context.Context, in modelAuth.LoginInput, client
 	tenant, err := s.loginTenant(ctx, in.Tenant)
 	if errors.Is(err, errr.ErrNotFound) || (err == nil && !tenant.IsActive) {
 		s.hasher.VerifyDummy(ctx, in.Password)
+		*result = loginUnknownAccount
 		return modelAuth.LoginDTO{}, errInvalidCredentials
 	}
 	if err != nil {
@@ -128,6 +135,7 @@ func (s *AuthService) login(ctx context.Context, in modelAuth.LoginInput, client
 	})
 	if errors.Is(err, errr.ErrNotFound) || (err == nil && user.PasswordHash == nil) {
 		s.hasher.VerifyDummy(ctx, in.Password)
+		*result = loginUnknownAccount
 		return modelAuth.LoginDTO{}, errInvalidCredentials
 	}
 	if err != nil {
@@ -140,8 +148,10 @@ func (s *AuthService) login(ctx context.Context, in modelAuth.LoginInput, client
 	}
 	if !ok || user.Status != modelAuth.UserStatusActive {
 		reason := "wrong_password"
+		*result = loginWrongPassword
 		if ok {
 			reason = "user_" + string(user.Status)
+			*result = loginInactiveUser
 		}
 		s.auditLoginFailed(ctx, tenant.ID, user.ID, reason, client)
 		return modelAuth.LoginDTO{}, errInvalidCredentials
@@ -225,7 +235,11 @@ func (s *AuthService) authenticate(ctx context.Context, token string) (modelAuth
 	hash := securetoken.Hash(token)
 	key := string(hash)
 	now := s.now().UTC()
-	if p, ok := s.principals.get(key, now); ok {
+	p, ok := s.principals.get(key, now)
+	if s.principals != nil {
+		s.metrics.cacheLookup(ctx, ok)
+	}
+	if ok {
 		return p, nil
 	}
 	st := s.principals.stamp(now) // before reading: see principalCache
@@ -238,7 +252,6 @@ func (s *AuthService) authenticate(ctx context.Context, token string) (modelAuth
 		return modelAuth.Principal{}, err
 	}
 
-	var p modelAuth.Principal
 	var sessionExpires time.Time
 	err = s.tx.WithTenant(ctx, tenantID, func(ctx context.Context) error {
 		session, err := s.storer.FindSessionByHash(ctx, hash)

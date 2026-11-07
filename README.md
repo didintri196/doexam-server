@@ -262,3 +262,6 @@ Target `db/migrations/*` membaca `DATABASE_URL` dari `.env` (atau environment).
 | `AUTH_CACHE_TTL` | `30s` | Lama hasil validasi token login dipercaya tanpa membaca database (`0` = mati, maks. `5m`). Logout, suspend, ganti peran, dan reset password berlaku seketika di server yang sama; di server lain paling lambat sebesar nilai ini |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(kosong)_ | Endpoint OTLP gRPC; kosong = tracing mati |
 | `OTEL_SERVICE_NAME` | `doexam-api` | Nama service di tracing |
+| `METRICS_ADDR` | `127.0.0.1:9464` | Listener `/metrics` (Prometheus), terpisah dari port API. `off` = mati. Katalog metrik: [METRICS.md](METRICS.md) |
+| `METRICS_TOKEN` | _(kosong)_ | Bila diisi, scrape wajib `Authorization: Bearer <token>`. Wajib di production bila `METRICS_ADDR` bukan loopback |
+| `OTEL_METRICS_EXPORTER` | `none` | `otlp` = metrik juga dikirim ke `OTEL_EXPORTER_OTLP_ENDPOINT` |

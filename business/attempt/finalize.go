@@ -109,7 +109,11 @@ func (s *AttemptService) finalize(ctx context.Context, a *modelAttempt.AttemptEn
 	if err := s.recompute(ctx, a, true); err != nil {
 		return err
 	}
-	return s.event(ctx, *a, modelAttempt.EventSubmitted, actorID, map[string]any{"reason": reason, "pending_manual": a.PendingManualCount}, client)
+	if err := s.event(ctx, *a, modelAttempt.EventSubmitted, actorID, map[string]any{"reason": reason, "pending_manual": a.PendingManualCount}, client); err != nil {
+		return err
+	}
+	s.metrics.finish(ctx, a.ID, reason)
+	return nil
 }
 
 // recompute (re)scores every item of a submitted attempt and its section and attempt totals.

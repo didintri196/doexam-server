@@ -50,30 +50,32 @@ var (
 // transaction: either every row is imported or none. Generated passwords are kept
 // only in memory (CredentialVault) and can be downloaded once.
 type ImportService struct {
-	storer ImportStorer
-	tx     TxManager
-	files  FileStore
-	hasher PasswordHasher
-	vault  CredentialVault
-	slot   chan struct{} // one import at a time per instance
-	wg     sync.WaitGroup
-	now    func() time.Time
-	tracer trace.Tracer
-	logger *slog.Logger
+	storer  ImportStorer
+	tx      TxManager
+	files   FileStore
+	hasher  PasswordHasher
+	vault   CredentialVault
+	slot    chan struct{} // one import at a time per instance
+	wg      sync.WaitGroup
+	now     func() time.Time
+	tracer  trace.Tracer
+	logger  *slog.Logger
+	metrics *importMetrics // nil in tests that build the struct directly
 }
 
 // NewImportService returns a concrete ImportService.
 func NewImportService(storer ImportStorer, tx TxManager, files FileStore, hasher PasswordHasher, vault CredentialVault, logger *slog.Logger) *ImportService {
 	return &ImportService{
-		storer: storer,
-		tx:     tx,
-		files:  files,
-		hasher: hasher,
-		vault:  vault,
-		slot:   make(chan struct{}, 1),
-		now:    time.Now,
-		tracer: otel.Tracer("doexam.service.importer"),
-		logger: logger,
+		storer:  storer,
+		tx:      tx,
+		files:   files,
+		hasher:  hasher,
+		vault:   vault,
+		slot:    make(chan struct{}, 1),
+		now:     time.Now,
+		tracer:  otel.Tracer("doexam.service.importer"),
+		logger:  logger,
+		metrics: newImportMetrics(),
 	}
 }
 
@@ -322,15 +324,22 @@ func (s *ImportService) run(ctx context.Context, p modelAuth.Principal, job mode
 	ctx, span := s.tracer.Start(ctx, "ImportService.run", trace.WithAttributes(attribute.String("import.id", job.ID)))
 	defer span.End()
 
+	kind := string(job.Kind)
+	queued := time.Now()
 	s.slot <- struct{}{}
 	defer func() { <-s.slot }()
+	s.metrics.queued(ctx, kind, queued)
 
 	logger := s.logger.With(slog.String("tenant_id", p.TenantID), slog.String("import_id", job.ID))
+	start := time.Now()
 	imported, creds, rowErrs, err := s.importFile(ctx, p, job, client)
+	result := "done"
+	defer func() { s.metrics.done(ctx, kind, result, start, imported) }()
 	now := s.now().UTC()
 	job.FinishedAt = &now
 	switch {
 	case err != nil:
+		result, imported = "failed", 0
 		_ = fail(span, err)
 		logger.ErrorContext(ctx, "import failed", slog.String("error", err.Error()))
 		msg := "import failed, please try again"
@@ -339,6 +348,7 @@ func (s *ImportService) run(ctx context.Context, p modelAuth.Principal, job mode
 		}
 		job.Status, job.Errors = modelImport.StatusFailed, modelImport.EncodeErrors([]modelImport.RowError{{Message: msg}})
 	case len(rowErrs) > 0:
+		result, imported = "invalid", 0
 		job.Status, job.Errors = modelImport.StatusFailed, modelImport.EncodeErrors(rowErrs)
 		job.ErrorRows = countRows(rowErrs)
 		logger.WarnContext(ctx, "import failed revalidation", slog.Int("error_rows", job.ErrorRows))

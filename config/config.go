@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -42,23 +44,37 @@ type DoExamConfig struct {
 	// OTEL (tracing disabled when OTELEndpoint is empty)
 	OTELEndpoint string
 	OTELService  string
+
+	// Metrics: Prometheus /metrics on its own listener (empty = off), optionally behind a
+	// bearer token; OTELMetricsExporter "otlp" also pushes them to OTELEndpoint.
+	MetricsAddr         string
+	MetricsToken        string
+	OTELMetricsExporter string
+}
+
+// MetricsEnabled reports whether metrics are collected at all.
+func (c *DoExamConfig) MetricsEnabled() bool {
+	return c.MetricsAddr != "" || c.OTELMetricsExporter == "otlp"
 }
 
 // Load reads configuration from environment variables with defaults.
 func Load() *Config {
 	return &Config{
 		DoExam: DoExamConfig{
-			ServerPort:      getEnv("PORT", "8080"),
-			Environment:     getEnv("APP_ENV", "development"),
-			DatabaseURL:     getEnv("DATABASE_URL", defaultDatabaseURL),
-			SessionTTL:      getDuration("AUTH_SESSION_TTL", 12*time.Hour),
-			AuthCacheTTL:    getOptionalDuration("AUTH_CACHE_TTL", 30*time.Second),
-			StorageDir:      getEnv("STORAGE_DIR", "./data/storage"),
-			MediaSigningKey: os.Getenv("MEDIA_SIGNING_KEY"),
-			RedisURL:        os.Getenv("REDIS_URL"),
-			ContentCacheMB:  getInt("CONTENT_CACHE_MB", 64),
-			OTELEndpoint:    os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-			OTELService:     getEnv("OTEL_SERVICE_NAME", "doexam-api"),
+			ServerPort:          getEnv("PORT", "8080"),
+			Environment:         getEnv("APP_ENV", "development"),
+			DatabaseURL:         getEnv("DATABASE_URL", defaultDatabaseURL),
+			SessionTTL:          getDuration("AUTH_SESSION_TTL", 12*time.Hour),
+			AuthCacheTTL:        getOptionalDuration("AUTH_CACHE_TTL", 30*time.Second),
+			StorageDir:          getEnv("STORAGE_DIR", "./data/storage"),
+			MediaSigningKey:     os.Getenv("MEDIA_SIGNING_KEY"),
+			RedisURL:            os.Getenv("REDIS_URL"),
+			ContentCacheMB:      getInt("CONTENT_CACHE_MB", 64),
+			OTELEndpoint:        os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+			OTELService:         getEnv("OTEL_SERVICE_NAME", "doexam-api"),
+			MetricsAddr:         metricsAddr(getEnv("METRICS_ADDR", "127.0.0.1:9464")),
+			MetricsToken:        os.Getenv("METRICS_TOKEN"),
+			OTELMetricsExporter: strings.ToLower(getEnv("OTEL_METRICS_EXPORTER", "none")),
 		},
 	}
 }
@@ -82,7 +98,45 @@ func (c *DoExamConfig) Validate() error {
 	if c.SessionTTL <= 0 {
 		return fmt.Errorf("AUTH_SESSION_TTL must be a positive duration (e.g. 12h)")
 	}
+	if c.MetricsAddr != "" {
+		if _, _, err := net.SplitHostPort(c.MetricsAddr); err != nil {
+			return fmt.Errorf("METRICS_ADDR must be host:port (e.g. 127.0.0.1:9464) or off, got %q", c.MetricsAddr)
+		}
+		if c.Environment == "production" && c.MetricsToken == "" && !isLoopback(c.MetricsAddr) {
+			return fmt.Errorf("METRICS_TOKEN must be set in production when METRICS_ADDR is not a loopback address")
+		}
+	}
+	switch c.OTELMetricsExporter {
+	case "none":
+	case "otlp":
+		if c.OTELEndpoint == "" {
+			return fmt.Errorf("OTEL_METRICS_EXPORTER=otlp needs OTEL_EXPORTER_OTLP_ENDPOINT")
+		}
+	default:
+		return fmt.Errorf("OTEL_METRICS_EXPORTER must be none or otlp, got %q", c.OTELMetricsExporter)
+	}
 	return nil
+}
+
+// metricsAddr turns "off" into "" (disabled).
+func metricsAddr(v string) string {
+	if strings.EqualFold(v, "off") {
+		return ""
+	}
+	return v
+}
+
+// isLoopback reports whether a listen address only accepts connections from this host.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func getEnv(key, fallback string) string {

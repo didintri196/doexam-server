@@ -191,6 +191,7 @@ func (s *AttemptService) tick(ctx context.Context, a *modelAttempt.AttemptEntity
 		if err := s.closeSection(ctx, a, sections, i, client); err != nil {
 			return err
 		}
+		s.metrics.sectionTimedOut(ctx)
 	}
 	return nil
 }

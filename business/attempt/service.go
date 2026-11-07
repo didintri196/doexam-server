@@ -88,11 +88,14 @@ type AttemptService struct {
 	seed    func() int64
 	tracer  trace.Tracer
 	logger  *slog.Logger
+	metrics *attemptMetrics // nil in tests that build the struct directly
 }
 
 // NewAttemptService returns a concrete AttemptService.
 func NewAttemptService(storer AttemptStorer, tx TxManager, media MediaLinker, board Announcements, content ContentCache, logger *slog.Logger) *AttemptService {
-	return &AttemptService{storer: storer, tx: tx, media: media, board: board, content: content, now: time.Now, seed: randomSeed, tracer: otel.Tracer("doexam.service.attempt"), logger: logger}
+	s := &AttemptService{storer: storer, tx: tx, media: media, board: board, content: content, now: time.Now, seed: randomSeed, tracer: otel.Tracer("doexam.service.attempt"), logger: logger}
+	s.metrics = newAttemptMetrics(func() time.Time { return s.now() })
+	return s
 }
 
 // Start begins an attempt for the caller in an open session, or resumes the running one.
@@ -102,8 +105,19 @@ func (s *AttemptService) Start(ctx context.Context, p modelAuth.Principal, in mo
 	ctx, span := s.tracer.Start(ctx, "AttemptService.Start", trace.WithAttributes(attribute.String("session.id", in.SessionID)))
 	defer span.End()
 
+	var resumed bool
+	out, err := s.start(ctx, p, in, deviceID, client, &resumed)
+	s.metrics.start(ctx, err, resumed)
+	if err != nil {
+		return modelAttempt.AttemptView{}, fail(span, err)
+	}
+	s.metrics.seen(out.ID, out.Status, s.now())
+	return out, nil
+}
+
+func (s *AttemptService) start(ctx context.Context, p modelAuth.Principal, in modelAttempt.StartInput, deviceID string, client modelAudit.Client, resumed *bool) (modelAttempt.AttemptView, error) {
 	if !p.Has(modelAuth.PermAttemptTake) {
-		return modelAttempt.AttemptView{}, fail(span, errr.ErrForbidden)
+		return modelAttempt.AttemptView{}, errr.ErrForbidden
 	}
 	if uuid.Validate(in.SessionID) != nil {
 		return modelAttempt.AttemptView{}, errSessionNotFound
@@ -150,7 +164,8 @@ func (s *AttemptService) Start(ctx context.Context, p modelAuth.Principal, in mo
 				return err
 			}
 		}
-		if a.ID == "" || (a.Status != modelAttempt.StatusInProgress && a.Status != modelAttempt.StatusLocked) {
+		*resumed = a.ID != "" && running(a.Status)
+		if !*resumed {
 			if a, err = s.create(ctx, p, sess, part, exam, deviceID, now, client); err != nil {
 				return err
 			}
@@ -162,7 +177,7 @@ func (s *AttemptService) Start(ctx context.Context, p modelAuth.Principal, in mo
 		return err
 	})
 	if err != nil {
-		return modelAttempt.AttemptView{}, fail(span, err)
+		return modelAttempt.AttemptView{}, err
 	}
 	return out, nil
 }
@@ -367,6 +382,9 @@ func (s *AttemptService) event(ctx context.Context, a modelAttempt.AttemptEntity
 		TenantID: a.TenantID, AttemptID: a.ID, Type: typ, Payload: body, ActorID: actorID,
 		ServerTS: s.now().UTC(), IP: nonEmpty(client.IP),
 	})
+	if err == nil {
+		s.metrics.serverViolation(ctx, typ)
+	}
 	return err
 }
 

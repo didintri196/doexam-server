@@ -10,8 +10,14 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/crypto/argon2"
+
+	"doexam/pkg/metrics"
 )
 
 // ErrMalformedHash is returned when a stored hash cannot be parsed.
@@ -37,6 +43,10 @@ type Hasher struct {
 	params Params
 	sem    chan struct{}
 	dummy  string
+
+	pool     attribute.KeyValue
+	wait     metric.Float64Histogram // time waiting for a free slot
+	duration metric.Float64Histogram // time computing Argon2
 }
 
 // NewHasher returns a Hasher. maxConcurrent <= 0 means runtime.NumCPU().
@@ -44,8 +54,22 @@ func NewHasher(params Params, maxConcurrent int) *Hasher {
 	if maxConcurrent <= 0 {
 		maxConcurrent = runtime.NumCPU()
 	}
-	h := &Hasher{params: params, sem: make(chan struct{}, maxConcurrent)}
+	h := &Hasher{params: params, sem: make(chan struct{}, maxConcurrent), pool: attribute.String("pool", "default")}
+	m := otel.Meter("doexam.password")
+	buckets := metric.WithExplicitBucketBoundaries(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+	var errWait, errDur error
+	h.wait, errWait = m.Float64Histogram("doexam.password.wait.duration", metric.WithUnit("s"), buckets,
+		metric.WithDescription("Time a password hash waited for a free hashing slot."))
+	h.duration, errDur = m.Float64Histogram("doexam.password.hash.duration", metric.WithUnit("s"), buckets,
+		metric.WithDescription("Time spent computing Argon2id, by operation."))
+	metrics.Report(errWait, errDur)
 	h.dummy = h.hash([]byte("doexam-dummy-password"), make([]byte, params.SaltLen))
+	return h
+}
+
+// Named sets the pool label of the hasher's metrics ("login", "import") and returns h.
+func (h *Hasher) Named(pool string) *Hasher {
+	h.pool = attribute.String("pool", pool)
 	return h
 }
 
@@ -59,6 +83,8 @@ func (h *Hasher) Hash(ctx context.Context, pw string) (string, error) {
 		return "", err
 	}
 	defer h.release()
+	start := time.Now()
+	defer h.observe(ctx, "hash", start)
 	return h.hash([]byte(pw), salt), nil
 }
 
@@ -73,6 +99,8 @@ func (h *Hasher) Verify(ctx context.Context, encoded, pw string) (bool, error) {
 		return false, err
 	}
 	defer h.release()
+	start := time.Now()
+	defer h.observe(ctx, "verify", start)
 	got := argon2.IDKey([]byte(pw), salt, p.Iterations, p.MemoryKiB, p.Parallelism, uint32(len(key)))
 	return subtle.ConstantTimeCompare(got, key) == 1, nil
 }
@@ -84,11 +112,21 @@ func (h *Hasher) VerifyDummy(ctx context.Context, pw string) {
 }
 
 func (h *Hasher) acquire(ctx context.Context) error {
+	start := time.Now()
 	select {
 	case h.sem <- struct{}{}:
+		if h.wait != nil {
+			h.wait.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(h.pool))
+		}
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+func (h *Hasher) observe(ctx context.Context, op string, start time.Time) {
+	if h.duration != nil {
+		h.duration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(h.pool, attribute.String("op", op)))
 	}
 }
 
