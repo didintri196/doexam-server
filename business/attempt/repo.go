@@ -32,7 +32,7 @@ func NewAttemptRepo(db *gorm.DB) *AttemptRepo {
 func (r *AttemptRepo) FindSession(ctx context.Context, id string) (SessionInfo, error) {
 	var rows []SessionInfo
 	err := dbpg.Conn(ctx, r.db).Table("exam_sessions").
-		Select("id, exam_id, status, starts_at, ends_at, late_entry_minutes, token_required, token_secret, token_rotation_minutes").
+		Select("id, exam_id, status, starts_at, ends_at, late_entry_minutes, token_required, token_secret, token_rotation_minutes, require_camera, require_screen").
 		Where("id = ?", id).Limit(1).Scan(&rows).Error
 	if err != nil {
 		return SessionInfo{}, fmt.Errorf("find session: %w", err)

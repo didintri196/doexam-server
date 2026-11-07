@@ -302,6 +302,23 @@ func TestRunningSessionEdits(t *testing.T) {
 	if _, err := svc.Update(ctx, managerP, sessionID, modelSession.SessionInput{EndsAt: &past}, modelAudit.Client{}); !errors.Is(err, errr.ErrInvalidInput) {
 		t.Fatalf("end in the past: err = %v", err)
 	}
+	// participants may already be taking the exam without sharing (DOCS/PLAN/19 §3)
+	on := true
+	if _, err := svc.Update(ctx, managerP, sessionID, modelSession.SessionInput{RequireScreen: &on}, modelAudit.Client{}); !errors.Is(err, errr.ErrConflict) {
+		t.Fatalf("require screen on a running session: err = %v", err)
+	}
+}
+
+func TestSharingRequirements(t *testing.T) {
+	svc, store := newFixture(modelSession.StatusScheduled)
+	on := true
+	dto, err := svc.Update(context.Background(), managerP, sessionID, modelSession.SessionInput{RequireCamera: &on, RequireScreen: &on}, modelAudit.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dto.RequireCamera || !dto.RequireScreen || !store.sess.RequireCamera || !store.sess.RequireScreen {
+		t.Fatalf("dto %+v entity %+v", dto, store.sess)
+	}
 }
 
 func TestTokenAndRotate(t *testing.T) {

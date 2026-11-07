@@ -21,6 +21,8 @@ type SessionInfo struct {
 	TokenRequired        bool
 	TokenSecret          []byte
 	TokenRotationMinutes int
+	RequireCamera        bool
+	RequireScreen        bool
 }
 
 // ParticipantInfo is a participant row.
@@ -76,6 +78,12 @@ type MonitorAttempt struct {
 	FocusLost       int
 	FullscreenExit  int
 	DeviceChanged   int
+	CameraStopped   int
+	ScreenStopped   int
+	ExtraDisplay    int
+	CameraOff       bool
+	ScreenOff       bool
+	ExtraDisplayOn  bool
 	LastViolationAt *time.Time
 	LockedAt        *time.Time
 	SubmittedAt     *time.Time

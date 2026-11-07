@@ -132,3 +132,29 @@ func isValidation(err error) bool {
 	var v *errr.ValidationError
 	return errors.As(err, &v)
 }
+
+func TestMonitorDTOMedia(t *testing.T) {
+	id := "a1"
+	rows := []MonitorAttempt{
+		{UserID: "u1", AttemptID: &id, FocusLost: 1, CameraStopped: 2, ScreenStopped: 1, ExtraDisplay: 1, ScreenOff: true, ExtraDisplayOn: true},
+		{UserID: "u2"}, // not started: no media state
+	}
+	now := time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)
+
+	off := monitorDTO(SessionInfo{ID: "s"}, now, nil, rows)
+	if off.Rows[0].Media != nil || off.RequireCamera || off.RequireScreen {
+		t.Fatalf("media without sharing: %+v", off.Rows[0])
+	}
+	if off.Rows[0].Violations != 5 || off.Rows[0].ViolationCounts[modelAttempt.ViolationCameraStopped] != 2 {
+		t.Fatalf("violations %d %v", off.Rows[0].Violations, off.Rows[0].ViolationCounts)
+	}
+
+	on := monitorDTO(SessionInfo{ID: "s", RequireScreen: true}, now, nil, rows)
+	m := on.Rows[0].Media
+	if !on.RequireScreen || m == nil || m.CameraOff || !m.ScreenOff || !m.ExtraDisplay {
+		t.Fatalf("media %+v", m)
+	}
+	if on.Rows[1].Media != nil {
+		t.Fatalf("participant without attempt has media %+v", on.Rows[1].Media)
+	}
+}

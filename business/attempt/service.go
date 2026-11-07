@@ -61,7 +61,10 @@ type snapshot struct {
 	DurationMinutes  *int            `json:"duration_minutes"`
 	ExtraMinutes     int             `json:"extra_minutes"`
 	SectionMode      string          `json:"section_mode"`
-	Sections         []snapSection   `json:"sections"`
+	// RequireCamera/RequireScreen come from the session (DOCS/PLAN/19-LIHAT-LAYAR-KAMERA.md).
+	RequireCamera bool          `json:"require_camera,omitempty"`
+	RequireScreen bool          `json:"require_screen,omitempty"`
+	Sections      []snapSection `json:"sections"`
 }
 
 type snapSection struct {
@@ -252,6 +255,7 @@ func (s *AttemptService) create(ctx context.Context, p modelAuth.Principal, sess
 	}
 
 	snap := makeSnapshot(exam, sections, part.ExtraTimeMinutes)
+	snap.RequireCamera, snap.RequireScreen = sess.RequireCamera, sess.RequireScreen
 	extra := time.Duration(part.ExtraTimeMinutes) * time.Minute
 	var total time.Duration
 	if exam.DurationMinutes != nil {

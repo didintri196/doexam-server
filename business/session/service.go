@@ -233,7 +233,8 @@ func (s *SessionService) Create(ctx context.Context, p modelAuth.Principal, in m
 
 // runningEditable reports whether in only touches fields that may change while a session runs.
 func runningEditable(in modelSession.SessionInput) bool {
-	return in.ExamID == nil && in.StartsAt == nil && in.IsMakeup == nil
+	// camera/screen requirements are fixed once participants may have started without them
+	return in.ExamID == nil && in.StartsAt == nil && in.IsMakeup == nil && in.RequireCamera == nil && in.RequireScreen == nil
 }
 
 // Update changes a session (session.manage). A running session (open/paused) only
@@ -527,6 +528,12 @@ func applyInput(sess *modelSession.SessionEntity, in modelSession.SessionInput, 
 	if in.IsMakeup != nil {
 		sess.IsMakeup = *in.IsMakeup
 	}
+	if in.RequireCamera != nil {
+		sess.RequireCamera = *in.RequireCamera
+	}
+	if in.RequireScreen != nil {
+		sess.RequireScreen = *in.RequireScreen
+	}
 	if !sess.StartsAt.IsZero() && !sess.EndsAt.IsZero() {
 		v.Check(sess.EndsAt.After(sess.StartsAt), "ends_at", "must be after starts_at")
 		v.Check(sess.EndsAt.Sub(sess.StartsAt) <= maxWindow, "ends_at", "window max 31 days")
@@ -611,7 +618,8 @@ func (s *SessionService) detail(ctx context.Context, sess modelSession.SessionEn
 	return modelSession.SessionDTO{
 		ID: sess.ID, Exam: exam, Name: sess.Name, Room: sess.Room, StartsAt: sess.StartsAt, EndsAt: sess.EndsAt,
 		LateEntryMinutes: sess.LateEntryMinutes, TokenRequired: sess.TokenRequired, TokenRotationMinutes: sess.TokenRotationMinutes,
-		Status: sess.Status, IsMakeup: sess.IsMakeup, ParticipantCount: count, Attendance: att,
+		Status: sess.Status, IsMakeup: sess.IsMakeup, RequireCamera: sess.RequireCamera, RequireScreen: sess.RequireScreen,
+		ParticipantCount: count, Attendance: att,
 		Proctors: proctors, Groups: groups, MyRole: string(r), CreatedAt: sess.CreatedAt, UpdatedAt: sess.UpdatedAt,
 	}, nil
 }

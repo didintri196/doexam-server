@@ -21,6 +21,7 @@ import (
 	"doexam/business/health"
 	"doexam/business/importer"
 	"doexam/business/itembank"
+	"doexam/business/liveview"
 	"doexam/business/media"
 	"doexam/business/report"
 	"doexam/business/session"
@@ -35,6 +36,7 @@ import (
 	"doexam/pkg/metrics"
 	"doexam/pkg/middleware"
 	"doexam/pkg/password"
+	"doexam/pkg/pglisten"
 	"doexam/pkg/storage"
 	"doexam/pkg/ttlcache"
 )
@@ -61,6 +63,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	attemptRepo := attempt.NewAttemptRepo(db)
 	reportRepo := report.NewReportRepo(db)
 	mediaRepo := media.NewMediaRepo(db)
+	liveViewRepo := liveview.NewLiveViewRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
 	hasher := password.NewHasher(password.DefaultParams, 0).Named("login")
@@ -79,6 +82,8 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	// Links live ≥12 h (a long exam day) and change once an hour, so caches can reuse them.
 	mediaSigner := mediaurl.NewSigner(mediaKey, 12*time.Hour, time.Hour)
 	contentCache, closeCache, pingCache := newContentCache(cfg, logger)
+	// Live-view long-polls on every replica wake on NOTIFY (DOCS/PLAN/19 §6.2); Run starts below.
+	liveViewWaker := pglisten.New(cfg.DatabaseURL, liveview.NotifyChannel, logger)
 	deps := map[string]metrics.Check{"postgres": dbPinger.Ping}
 	if pingCache != nil {
 		deps["redis"] = pingCache
@@ -86,6 +91,9 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	if err := errors.Join(metrics.RegisterDependencies(deps, 15*time.Second), metrics.RegisterDiskFree("files", cfg.StorageDir)); err != nil {
 		return nil, err
 	}
+
+	listenCtx, stopListening := context.WithCancel(context.Background())
+	go liveViewWaker.Run(listenCtx)
 
 	// ── Services (Core) ────────────────────────────────────────
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
@@ -102,6 +110,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, announcementBoard, contentCache, logger)
 	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, importHasher, mediaSigner, announcementBoard, logger)
 	reportSvc := report.NewReportService(reportRepo, txManager, logger)
+	liveViewSvc := liveview.NewLiveViewService(liveViewRepo, txManager, liveViewWaker, cfg.ICEServers, logger)
 
 	// ── Handlers ───────────────────────────────────────────────
 	healthHandler := handler.NewHealthHandler(healthSvc)
@@ -118,6 +127,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	gradingHandler := handler.NewGradingHandler(attemptSvc)
 	reportHandler := handler.NewReportHandler(reportSvc)
 	mediaHandler := handler.NewMediaHandler(mediaSvc)
+	liveViewHandler := handler.NewLiveViewHandler(liveViewSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
 	httpMetrics := middleware.NewHTTPMetrics()
@@ -283,11 +293,17 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	v1.Post("/my/announcements/:aid/read", requireAuth, sessionHandler.ReadAnnouncement)
 	sessions.Get("/:id/monitor/list", attemptHandler.MonitorList)
 	sessions.Post("/:id/monitor/watch", attemptHandler.MonitorWatch)
+	sessions.Post("/:id/live-views", liveViewHandler.Open)
+	sessions.Delete("/:id/live-views/:vid", liveViewHandler.Close)
+	sessions.Get("/:id/live-views/:vid/signal", liveViewHandler.ProctorPoll)
+	sessions.Post("/:id/live-views/:vid/signal", liveViewHandler.ProctorSignal)
 
 	attempts := v1.Group("/attempts", requireAuth)
 	attempts.Post("/", attemptHandler.Start)
 	attempts.Get("/:id", attemptHandler.Get)
 	attempts.Post("/:id/events", attemptHandler.Sync)
+	attempts.Get("/:id/signal", liveViewHandler.ParticipantPoll)
+	attempts.Post("/:id/signal", liveViewHandler.ParticipantSignal)
 	attempts.Post("/:id/sections/:section_id/finish", attemptHandler.FinishSection)
 	attempts.Post("/:id/submit", attemptHandler.Submit)
 	attempts.Get("/:id/result", attemptHandler.Result)
@@ -322,6 +338,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	}
 
 	shutdown := func(ctx context.Context) error {
+		stopListening()
 		err := errors.Join(importSvc.Shutdown(ctx), attemptSvc.Shutdown(ctx))
 		return errors.Join(err, closeCache())
 	}
