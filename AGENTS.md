@@ -243,7 +243,7 @@ Untuk 4xx, pesan dari `errr.WithMessage` (mis. "setup already completed", "inval
 
 ## 8. Database
 
-- **Sumber kebenaran skema = `migrations/`** (golang-migrate). `DOCS/PLAN/08-schema-mvp.sql` hanya rujukan desain awal. **Dilarang** `db.AutoMigrate`.
+- **Sumber kebenaran skema = `migrations/`** (golang-migrate). File SQL di-`go:embed` (`migrations/embed.go`) dan dijalankan oleh binary sendiri: `doexam migrate up|down N|version` (`pkg/dbmigrate`, advisory lock). CLI `migrate` hanya untuk `make db/migrations/new`. `DOCS/PLAN/08-schema-mvp.sql` hanya rujukan desain awal. **Dilarang** `db.AutoMigrate`.
 - Setiap migrasi punya `up` dan `down`, dan `down` harus benar-benar membalik `up` (uji `up` → `down` → `up`). Migrasi yang sudah di-merge **tidak boleh diedit**. Buat migrasi baru.
 - Tabel baru yang punya `tenant_id` **wajib** memanggil `SELECT enable_tenant_rls('nama_tabel');`. Tabel yang punya `updated_at` **wajib** memanggil `SELECT add_updated_at_trigger('nama_tabel');`. Kedua helper ada di `000001_init`.
 - PK: UUID (dibuat aplikasi, UUIDv7). Waktu: `timestamptz`. Enum: `text` + `CHECK`.

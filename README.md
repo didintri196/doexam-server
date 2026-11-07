@@ -24,7 +24,7 @@ Backend DoExam — platform ujian open source (CBT & CAT).
 ```bash
 cp .env.example .env
 docker compose up -d postgres
-make db/migrations/up    # butuh golang-migrate: brew install golang-migrate
+make db/migrations/up    # = go run ./app/server migrate up (migrasi ter-embed di binary)
 make run/api
 ```
 
