@@ -28,7 +28,10 @@ func NewAuthHandler(authSvc *auth.AuthService) *AuthHandler {
 func (h *AuthHandler) RequireAuth(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
 
-	scheme, token, found := strings.Cut(c.Get(fiber.HeaderAuthorization), " ")
+	// c.Get borrows fasthttp's request buffer, which is reused after the request: copy it,
+	// since the principal (and its tenant ID taken from the token) outlives the request in
+	// the principal cache.
+	scheme, token, found := strings.Cut(strings.Clone(c.Get(fiber.HeaderAuthorization)), " ")
 	if !found || !strings.EqualFold(scheme, "Bearer") || token == "" {
 		return ErrorResponse(c, fiber.StatusUnauthorized, "unauthorized", nil)
 	}

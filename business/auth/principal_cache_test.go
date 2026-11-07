@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	modelAudit "doexam/models/audit"
 	modelAuth "doexam/models/auth"
@@ -223,5 +225,24 @@ func TestPrincipalCacheReturnsCopies(t *testing.T) {
 	}
 	if c.len() != 1 {
 		t.Fatalf("len = %d", c.len())
+	}
+}
+
+// TestAuthCacheOwnsTenantID: the token may borrow a request buffer that is reused after
+// the request (fasthttp). The cached principal's tenant ID must not point into it, or
+// later requests get a garbage tenant (seen as "create audit log: invalid input syntax
+// for type uuid" on every write).
+func TestAuthCacheOwnsTenantID(t *testing.T) {
+	f, _ := cachedFixture(t)
+	token := f.login(t).Token
+	buf := []byte(token)
+	borrowed := unsafe.String(&buf[0], len(buf)) // like c.Get on a fasthttp request
+	if p, err := f.svc.Authenticate(context.Background(), borrowed); err != nil || p.TenantID != tenantID {
+		t.Fatalf("first request: p = %+v, err = %v", p, err)
+	}
+	copy(buf, strings.Repeat("x", len(buf))) // the buffer is reused for another request
+	p, err := f.svc.Authenticate(context.Background(), token)
+	if err != nil || p.TenantID != tenantID {
+		t.Fatalf("cached principal tenant = %q (err %v), want %q", p.TenantID, err, tenantID)
 	}
 }
