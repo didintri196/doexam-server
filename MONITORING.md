@@ -63,7 +63,7 @@ Warna mengikuti satu palet kategori yang urutannya tetap; warna status (hijau/ku
 
 Satu instance DoExam lain (port 8080) juga terhubung ke database yang sama selama uji; koneksinya ikut terhitung di panel PostgreSQL.
 
-Uji dijalankan tiga kali. **Run 1** dihentikan saat Prometheus/Grafana dipindah ke `docker-compose.yml` server. **Run 2** menemukan bug metrik (§3.3). **Run 3** memakai binary yang sudah diperbaiki dan menjadi hasil utama di bawah.
+Uji 500 peserta dijalankan tiga kali, lalu satu kali dengan 1.000 peserta (§3.4). **Run 1** dihentikan saat Prometheus/Grafana dipindah ke `docker-compose.yml` server. **Run 2** menemukan bug metrik (§3.3). **Run 3** memakai binary yang sudah diperbaiki dan menjadi hasil utama di bawah.
 
 ### 3.1 Hasil run 3 (utama)
 
@@ -137,10 +137,61 @@ Dashboard utuh: [monitoring/img/dashboard-full.png](monitoring/img/dashboard-ful
 
 5. **Lag klien → server** tercatat di bucket pertama histogram (< 500 ms) sepanjang uji, karena k6 mengirim event segera. Bucket histogram kini ditambah 50/100/250 ms supaya lag sub-detik bisa dibaca (berlaku mulai build berikutnya; grafik di laporan ini masih memakai bucket lama).
 
-### 3.4 Batasan
+### 3.4 1.000 peserta serentak (run 4)
+
+Kondisi sama dengan run 3, binary yang sama (sudah berisi perbaikan §3.3 dan bucket lag baru), dengan **1.000 peserta** yang login tersebar dalam 60 detik.
+
+| Metrik (k6) | 500 peserta (run 3) | **1.000 peserta (run 4)** | Ambang |
+|-------------|---------------------|---------------------------|--------|
+| Request (rata-rata/detik) | 12.382 (32) | **24.603 (62)** | — |
+| Gagal · event ditolak | 0% · 0 | **0% · 0** | < 1% · 0 |
+| Jawaban terkirim → diterima → tersimpan di DB | 4.972 → 4.972 → 4.972 | **9.836 → 9.836 → 9.836** | sama |
+| Attempt dibuat → di-submit saat sesi ditutup | 500 → 500 | **1.000 → 1.000** | sama |
+| Login p95 / maks | 100 / 718 ms | **86 / 166 ms** | — |
+| Mulai attempt p95 / maks | 49 / 158 ms | **43 / 140 ms** | p95 < 2 s |
+| Sync heartbeat p95 / maks | 30 / 248 ms | **21 / 169 ms** | p95 < 300 ms |
+| Sync berisi jawaban p95 / maks | 36 / 279 ms | **27 / 228 ms** | p95 < 500 ms |
+| Monitor proktor p95 / maks | 98 / 203 ms | **66 / 75 ms** | — |
+
+Dari Prometheus, fase ujian (median / p90 / maks):
+
+| Metrik | 500 peserta | **1.000 peserta** |
+|--------|-------------|-------------------|
+| Peserta terhubung | 500 | **1.000** (stabil) |
+| Request/detik | 34 | **67** |
+| Sync p95 · p99 | 42 · 59 ms | **24 · 44 ms** |
+| Transaksi `AttemptService.Sync` p95 | 25 ms | **23 ms** |
+| Lag klien → server p50 · p95 | < 500 ms (bucket lama) | **25 · 48 ms** |
+| CPU API (dari 2 core) | 0,12 core | **0,21 core** (puncak 1,07 saat membuat 1.000 akun dan gelombang login) |
+| Memori RSS | 54 MB | **83 MB** (maks 89 MB selama ujian) |
+| Goroutine | ±520 | **±1.020** |
+| Query DB/detik | ±276 | **±546** |
+| Koneksi DB dipakai (pool 25) | maks 7 | **maks 7**, 0 antre, 0 query lambat |
+| Antre Argon2 p95 | 0 | **≤ 1 ms** |
+| Hit ratio cache token | ±60% | **±60%** |
+| Transaksi tutup sesi (`SessionService.SetStatus`) | 2,4 s | **4,9 s** |
+
+![Ujian live, 1.000 peserta](monitoring/img/1000-01-ujian-live.png)
+
+![Database, 1.000 peserta](monitoring/img/1000-04-database.png)
+
+![Proses dan runtime Go, 1.000 peserta](monitoring/img/1000-06-proses-runtime-go.png)
+
+Bagian lain: [API](monitoring/img/1000-02-api-rate-error-durasi.png) · [Auth & Argon2](monitoring/img/1000-03-auth-argon2.png) · [PostgreSQL](monitoring/img/1000-05-postgresql.png) · [dashboard utuh](monitoring/img/1000-dashboard-full.png).
+
+**Kesimpulan:**
+
+- **1.000 peserta lulus semua ambang** dengan sisa kapasitas besar: selama ujian API memakai ±11% dari 2 core, pool DB tidak pernah lebih dari 7 koneksi, dan tidak ada query di atas 200 ms.
+- **Beban naik lurus** dengan jumlah peserta: request, query, CPU, dan goroutine kira-kira dua kali lipat; latensi tidak naik (sedikit lebih rendah daripada run 3, dalam rentang variasi antar-run di mesin yang sama).
+- **Satu-satunya angka yang naik lurus dan terasa** adalah **penutupan sesi**: semua attempt di-submit dan dinilai dalam satu transaksi, 2,4 s untuk 500 dan 4,9 s untuk 1.000 attempt (±5 ms per attempt). Pada 3.000 peserta dalam satu sesi kira-kira 15 s. Tidak mengganggu peserta (ujian sudah selesai), tetapi transaksi selama itu menahan baris attempt; pertimbangkan memproses penutupan per batch bila sesi besar menjadi umum.
+- **Bucket lag baru bekerja:** lag sekarang terbaca 25 ms (p50) dan 48 ms (p95), bukan lagi "di bawah 500 ms".
+- Jeda database seperti run 2 **tidak muncul** di run 4.
+
+### 3.5 Batasan
 
 - Semua komponen di satu mesin tanpa latensi jaringan; PostgreSQL tanpa batas CPU.
 - Durasi ujian 5 menit, bukan 90 menit.
+- Batas atas belum dicari: uji 3.000 peserta sebelum ada metrik ([LOADTEST.md](LOADTEST.md)) menunjukkan gelombang login Argon2 sebagai batas pertama.
 - k6 tidak mengirim event pelanggaran atau media, jadi panel itu bernilai 0.
 - Overhead metrik terhadap latensi tidak diukur terpisah. Sebagai pembanding kasar, p95 sync di run 3 (30–36 ms) sejalan dengan run 500 peserta di [LOADTEST.md](LOADTEST.md) yang dibuat sebelum ada metrik (32–38 ms).
 
