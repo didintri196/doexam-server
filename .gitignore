@@ -25,3 +25,7 @@ tmp/
 # Uploaded files (STORAGE_DIR)
 data/
 monitoring/.metrics-token
+
+# Frontend build embedded at release time (keep the placeholder)
+app/server/web/dist/*
+!app/server/web/dist/.keep
