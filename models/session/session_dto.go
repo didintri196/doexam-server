@@ -19,6 +19,7 @@ type ListFilter struct {
 	From    *time.Time // sessions ending after From
 	To      *time.Time // sessions starting before To
 	Query   string     // matches session name, room and exam title
+	Asc     bool       // oldest first; default is newest first (starts_at DESC)
 }
 
 // SessionInput is the body of POST /api/v1/sessions and PATCH /api/v1/sessions/:id.

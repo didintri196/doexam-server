@@ -65,8 +65,16 @@ func (r *SessionRepo) ListSessions(ctx context.Context, f modelSession.ListFilte
 	err := q.Session(&gorm.Session{}).
 		Select(`es.id, es.exam_id, e.title AS exam_title, es.name, es.room, es.starts_at, es.ends_at, es.status, es.is_makeup,
 			(SELECT count(*) FROM exam_session_participants sp WHERE sp.session_id = es.id) AS participant_count`).
-		Order("es.starts_at, es.name, es.id").Limit(f.PerPage).Offset((f.Page - 1) * f.PerPage).Scan(&rows).Error
+		Order(sessionOrder(f.Asc)).Limit(f.PerPage).Offset((f.Page - 1) * f.PerPage).Scan(&rows).Error
 	return rows, total, wrap(err, "list sessions")
+}
+
+// sessionOrder sorts the session list by start time, newest first unless asc.
+func sessionOrder(asc bool) string {
+	if asc {
+		return "es.starts_at, es.name, es.id"
+	}
+	return "es.starts_at DESC, es.name, es.id"
 }
 
 func (r *SessionRepo) FindSession(ctx context.Context, id string, forUpdate bool) (modelSession.SessionEntity, error) {
