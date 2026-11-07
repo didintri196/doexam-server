@@ -53,6 +53,10 @@ func (r *SessionRepo) ListSessions(ctx context.Context, f modelSession.ListFilte
 	if f.To != nil {
 		q = q.Where("es.starts_at < ?", *f.To)
 	}
+	if f.Query != "" {
+		p := dbpg.ContainsPattern(f.Query)
+		q = q.Where("(es.name ILIKE ? OR es.room ILIKE ? OR e.title ILIKE ?)", p, p, p)
+	}
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count sessions: %w", err)

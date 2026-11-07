@@ -18,6 +18,7 @@ type ListFilter struct {
 	Status  Status
 	From    *time.Time // sessions ending after From
 	To      *time.Time // sessions starting before To
+	Query   string     // matches session name, room and exam title
 }
 
 // SessionInput is the body of POST /api/v1/sessions and PATCH /api/v1/sessions/:id.
