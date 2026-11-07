@@ -43,7 +43,8 @@ apps/server/
 ├── pkg/                     # Utilitas reusable, TIDAK tahu domain bisnis
 │   ├── db-pg/  errr/  mlog/  middleware/  otelutil/  password/  securetoken/
 │   ├── spreadsheet/  storage/  ttlcache/  bytecache/  richtext/  psychometrics/
-└── migrations/              # 000001_xxx.up.sql / .down.sql
+├── migrations/              # 000001_xxx.up.sql / .down.sql
+└── loadtest/                # skrip k6 uji beban (bukan bagian binary); lihat loadtest/README.md
 ```
 
 **Arah dependency (dilarang melanggar):**
