@@ -13,6 +13,9 @@ const VUS = Number(__ENV.VUS || 500);
 const MINUTES = Number(__ENV.MINUTES || 5); // exam time after the login wave
 const RAMP = Number(__ENV.RAMP_SECONDS || 60); // participants arrive over this many seconds
 const PROCTORS = Number(__ENV.PROCTORS || 2);
+// views (default): the paged monitor views of DOCS/PLAN/15; legacy: every participant per poll
+const MONITOR = __ENV.MONITOR || 'views';
+const VIEWS = ['violations', 'idle', 'all', 'in_progress', 'locked'];
 const PREFIX = __ENV.USER_PREFIX || 'ujibeban';
 // test accounts on a development server only (created by setup, removed by cleanup.js)
 const PASSWORD = __ENV.PARTICIPANT_PASSWORD || 'UjiBeban-2026!';
@@ -177,7 +180,10 @@ export function participant(data) {
 }
 
 export function proctor(data) {
-  const res = http.get(`${BASE}/sessions/${data.sessionID}/monitor`, Object.assign({ tags: { name: 'monitor' } }, json(data.admin)));
+  const url = MONITOR === 'legacy'
+    ? `${BASE}/sessions/${data.sessionID}/monitor`
+    : `${BASE}/sessions/${data.sessionID}/monitor/list?view=${VIEWS[exec.scenario.iterationInTest % VIEWS.length]}&page=1&per_page=10`;
+  const res = http.get(url, Object.assign({ tags: { name: 'monitor' } }, json(data.admin)));
   tMonitor.add(res.timings.duration);
   check(res, { 'monitor 200': (r) => r.status === 200 });
   sleep(5);

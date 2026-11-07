@@ -187,6 +187,61 @@ type MonitorRow struct {
 	Violations  int        `json:"violations"`
 	DeviceBound bool       `json:"device_bound"`
 	FinalScore  *float64   `json:"final_score"`
+	// Idle: in progress without a sync for longer than the monitor's idle threshold.
+	Idle bool `json:"idle"`
+	// ViolationCounts per type (focus_lost, fullscreen_exit, device_changed); Violations is their sum.
+	ViolationCounts map[string]int `json:"violation_counts"`
+	LastViolationAt *time.Time     `json:"last_violation_at"`
+	LockedAt        *time.Time     `json:"locked_at"` // last LOCKED event
+	SubmittedAt     *time.Time     `json:"submitted_at"`
+}
+
+// MonitorView selects the participants of GET /sessions/:id/monitor/list.
+type MonitorView string
+
+// Monitor views (DOCS/PLAN/15-MONITOR-KARTU.md §1).
+const (
+	ViewAll        MonitorView = "all"
+	ViewViolations MonitorView = "violations"
+	ViewIdle       MonitorView = "idle"
+	ViewLocked     MonitorView = "locked"
+	ViewNotStarted MonitorView = "not_started"
+	ViewInProgress MonitorView = "in_progress"
+	ViewSubmitted  MonitorView = "submitted"
+)
+
+// MonitorViews lists the valid views.
+var MonitorViews = []MonitorView{ViewAll, ViewViolations, ViewIdle, ViewLocked, ViewNotStarted, ViewInProgress, ViewSubmitted}
+
+// Violation types as the monitor names them (lowercase of the event types).
+const (
+	ViolationFocusLost      = "focus_lost"
+	ViolationFullscreenExit = "fullscreen_exit"
+	ViolationDeviceChanged  = "device_changed"
+)
+
+// ViolationTypes lists the valid violation_type filters.
+var ViolationTypes = []string{ViolationFocusLost, ViolationFullscreenExit, ViolationDeviceChanged}
+
+// MaxWatch is how many participants one proctor may watch at once.
+const MaxWatch = 25
+
+// MonitorFilter narrows the monitor. GroupID and Seat also scope the counts; Query,
+// View, ViolationType and UserIDs only pick the rows.
+type MonitorFilter struct {
+	View          MonitorView
+	ViolationType string
+	GroupID       string
+	Seat          string // seat prefix, e.g. "A-"
+	Query         string // name, username or seat
+	UserIDs       []string
+	Page          int
+	PerPage       int
+}
+
+// WatchInput is the body of POST /api/v1/sessions/:id/monitor/watch.
+type WatchInput struct {
+	UserIDs []string `json:"user_ids"`
 }
 
 // MonitorDTO is GET /api/v1/sessions/:id/monitor.
@@ -194,6 +249,6 @@ type MonitorDTO struct {
 	SessionID  string         `json:"session_id"`
 	Status     string         `json:"status"`
 	ServerTime time.Time      `json:"server_time"`
-	Counts     map[string]int `json:"counts"` // not_started, in_progress, locked, submitted, graded
+	Counts     map[string]int `json:"counts"` // legacy: not_started, in_progress, locked, submitted, graded; list/watch: total, not_started, in_progress, locked, submitted (incl. graded), idle, violations
 	Rows       []MonitorRow   `json:"rows"`
 }
