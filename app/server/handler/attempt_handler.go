@@ -108,6 +108,43 @@ func (h *AttemptHandler) Monitor(c *fiber.Ctx) error {
 	return SuccessResponse(c, fiber.StatusOK, "monitor retrieved", dto)
 }
 
+// monitorPerPage: the monitor shows 10 cards per page (DOCS/PLAN/15-MONITOR-KARTU.md); a
+// larger per_page is capped so no poll ever loads more than one page of cards.
+const monitorPerPage = 10
+
+// MonitorList handles GET /api/v1/sessions/:id/monitor/list?view&violation_type&group_id&seat&q&page&per_page:
+// one page of a monitor view, paged in SQL (DOCS/PLAN/15-MONITOR-KARTU.md).
+func (h *AttemptHandler) MonitorList(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+	page, perPage, err := parsePageSized(c, monitorPerPage, monitorPerPage)
+	if err != nil {
+		return handleError(c, logger, "invalid pagination", err)
+	}
+	f := modelAttempt.MonitorFilter{
+		View: modelAttempt.MonitorView(c.Query("view")), ViolationType: c.Query("violation_type"),
+		GroupID: c.Query("group_id"), Seat: c.Query("seat"), Query: c.Query("q"), Page: page, PerPage: perPage,
+	}
+	dto, total, err := h.attemptSvc.MonitorList(c.UserContext(), principal(c), c.Params("id"), f, clientInfo(c))
+	if err != nil {
+		return handleError(c, logger, "failed to load monitor", err)
+	}
+	return PaginatedResponse(c, dto, total, page, perPage)
+}
+
+// MonitorWatch handles POST /api/v1/sessions/:id/monitor/watch {user_ids} (at most 25).
+func (h *AttemptHandler) MonitorWatch(c *fiber.Ctx) error {
+	logger := middleware.GetLogger(c)
+	var in modelAttempt.WatchInput
+	if err := c.BodyParser(&in); err != nil {
+		return badBody(c)
+	}
+	dto, err := h.attemptSvc.MonitorWatch(c.UserContext(), principal(c), c.Params("id"), in, clientInfo(c))
+	if err != nil {
+		return handleError(c, logger, "failed to load monitor", err)
+	}
+	return SuccessResponse(c, fiber.StatusOK, "monitor retrieved", dto)
+}
+
 // Extend handles POST /api/v1/attempts/:id/extend {minutes}.
 func (h *AttemptHandler) Extend(c *fiber.Ctx) error {
 	var in modelAttempt.ExtendInput

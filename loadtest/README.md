@@ -50,10 +50,21 @@ APP_ENV=staging GOMAXPROCS=2 REDIS_URL=redis://localhost:6379/0 ./bin/doexam
 | `RAMP_SECONDS` | `60` | Rentang waktu kedatangan peserta |
 | `MINUTES` | `5` | Lama mengerjakan setelah gelombang login |
 | `PROCTORS` | `2` | Jumlah pengawas yang memantau |
+| `MONITOR` | `views` | `views`: tampilan monitor berhalaman (10 kartu, bergantian per poll); `legacy`: monitor lama (semua peserta) sebagai pembanding |
 | `USER_PREFIX` | `ujibeban` | Awalan username peserta uji |
 | `PARTICIPANT_PASSWORD` | `UjiBeban-2026!` | Password akun peserta uji (khusus server uji) |
 
 **Satu run memakai satu kesempatan mengerjakan per peserta.** Bila ujian hanya mengizinkan satu percobaan, run berikutnya akan gagal di `start` (HTTP 409 "no attempts left"). Untuk menghindarinya, pakai `USER_PREFIX` baru untuk setiap run, atau pakai ujian dengan batas percobaan lebih besar.
+
+## Uji monitor saja (`monitor.js`)
+
+Membebani monitor pengawas pada sesi yang **sudah ada**, tanpa peserta: `PROCTORS` pengawas me-refresh tiap 5 detik, bergantian antara halaman tampilan (10 kartu) dan daftar pantauan 25 peserta.
+
+```bash
+k6 run -e BASE_URL=http://localhost:8080 -e ADMIN_TOKEN=... -e SESSION_ID=... -e PROCTORS=50 -e DURATION=60s loadtest/monitor.js
+```
+
+`MONITOR=legacy` memakai monitor lama sebagai pembanding. Ambang: p95 < 200 ms.
 
 ## Memeriksa jawaban tidak hilang
 

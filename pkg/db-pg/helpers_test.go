@@ -16,3 +16,9 @@ func TestPrefixTSQuery(t *testing.T) {
 		t.Fatalf("PrefixTSQuery = %q, want empty", got)
 	}
 }
+
+func TestPrefixPattern(t *testing.T) {
+	if got := PrefixPattern(`A-1_%`); got != `A-1\_\%%` {
+		t.Fatalf("PrefixPattern = %q", got)
+	}
+}

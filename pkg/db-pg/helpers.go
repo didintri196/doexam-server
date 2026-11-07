@@ -23,9 +23,16 @@ func IsForeignKeyViolation(err error) bool {
 // ContainsPattern turns user input into an ILIKE pattern matching it anywhere.
 // % _ and \ are escaped, so the input is matched literally (default escape char is \).
 func ContainsPattern(q string) string {
-	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return "%" + r.Replace(q) + "%"
+	return "%" + likeEscaper.Replace(q) + "%"
 }
+
+// PrefixPattern turns user input into an ILIKE pattern matching values that start with it
+// (escaped like ContainsPattern).
+func PrefixPattern(q string) string {
+	return likeEscaper.Replace(q) + "%"
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // ConstraintName returns the violated constraint/index name of a PostgreSQL error, or "".
 func ConstraintName(err error) string {

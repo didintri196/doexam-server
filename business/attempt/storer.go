@@ -73,6 +73,14 @@ type MonitorAttempt struct {
 	Violations int
 	DeviceID   *string
 	FinalScore *float64
+	// filled by MonitorPage/MonitorWatch only
+	FocusLost       int
+	FullscreenExit  int
+	DeviceChanged   int
+	LastViolationAt *time.Time
+	LockedAt        *time.Time
+	SubmittedAt     *time.Time
+	Idle            bool
 }
 
 // AttemptStorer is the persistence port for attempts. Every method must run inside TxManager.WithTenant.
@@ -137,6 +145,11 @@ type AttemptStorer interface {
 	// Rows locked by another transaction are skipped (that request ticks them itself).
 	OverdueAttempts(ctx context.Context, sessionID string, cutoff time.Time) ([]modelAttempt.AttemptEntity, error)
 	Monitor(ctx context.Context, sessionID string) ([]MonitorAttempt, error)
+	// MonitorPage returns one page of a monitor view (or the watched participants when
+	// f.UserIDs is set), how many rows the view has, and the session's counts within
+	// f.GroupID/f.Seat, in one query. Only the page's rows get the costly per-attempt
+	// details (answered, item count).
+	MonitorPage(ctx context.Context, sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) (MonitorResult, error)
 	MyAttempts(ctx context.Context, userID string) ([]modelAttempt.MyAttemptDTO, error)
 }
 

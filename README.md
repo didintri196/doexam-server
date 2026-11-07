@@ -167,7 +167,9 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET | `/api/v1/sessions/:id/announcements/:aid/recipients` 🔒 proktor sesi / `session.manage` | Penerima dan `read_at` (belum membaca di atas) |
 | POST | `/api/v1/sessions/:id/announcements/:aid/retract` 🔒 pengirim / `session.manage` | Tarik pengumuman |
 | POST | `/api/v1/announcements` 🔒 `session.manage` | Satu pengumuman ke semua peserta beberapa sesi: `{session_ids \| running: true, body, priority}` |
-| GET | `/api/v1/sessions/:id/monitor` 🔒 | Dashboard proktor: status, terjawab, batas waktu, terakhir aktif, pelanggaran tiap peserta |
+| GET | `/api/v1/sessions/:id/monitor` 🔒 | *(lama, akan dihapus)* Dashboard proktor: semua peserta sesi dalam satu respons |
+| GET | `/api/v1/sessions/:id/monitor/list` 🔒 | Monitor proktor per tampilan, **10 kartu per halaman** (dipotong di query). Query: `view` (`all`·`violations`·`idle`·`locked`·`not_started`·`in_progress`·`submitted`), `violation_type` (`focus_lost`·`fullscreen_exit`·`device_changed`), `group_id`, `seat` (awalan), `q`, `page`. `counts` = jumlah per status seluruh sesi dalam lingkup grup/kursi. Lihat DOCS/PLAN/15 |
+| POST | `/api/v1/sessions/:id/monitor/watch` 🔒 | Daftar pantauan `{user_ids}` (maks. 25): baris peserta itu (pelanggar dulu) + `counts` seluruh sesi |
 | POST | `/api/v1/attempts/:id/extend` · `/lock` · `/unlock` · `/reset-device` · `/force-submit` 🔒 | Aksi proktor (proktor sesi atau `session.manage`) |
 | POST | `/api/v1/attempts/:id/grant-plays` 🔒 | Aksi proktor: `{plays: 1-5}` tambahan putar untuk setiap audio berbatas (mis. speaker rusak). Dicatat sebagai event `MEDIA_PLAYS_GRANTED` |
 | GET | `/api/v1/exams/:id/grading/summary` 🔒 | Soal esai ujian + jumlah menunggu/sudah dinilai |
