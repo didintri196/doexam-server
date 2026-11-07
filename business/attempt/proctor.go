@@ -3,6 +3,7 @@ package attempt
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -216,6 +217,7 @@ func (s *AttemptService) proctorAction(ctx context.Context, p modelAuth.Principa
 	if err != nil {
 		return modelAttempt.AttemptView{}, fail(span, err)
 	}
+	s.metrics.proctorAction(ctx, strings.TrimPrefix(spanName, "AttemptService."))
 	return out, nil
 }
 

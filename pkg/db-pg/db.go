@@ -28,7 +28,7 @@ func OpenDB(cfg Config) (*gorm.DB, error) {
 	// ParameterizedQueries: log SQL with placeholders only, never bound values
 	// (they include password hashes, token hashes and participant answers).
 	gormLogger := logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
-		SlowThreshold:             200 * time.Millisecond,
+		SlowThreshold:             SlowQueryThreshold,
 		LogLevel:                  logLevel,
 		IgnoreRecordNotFoundError: true,
 		ParameterizedQueries:      true,

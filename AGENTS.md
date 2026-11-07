@@ -16,6 +16,7 @@ Rujukan pola: Hexagonal Architecture (Ports & Adapters) ala [muchlist/templatere
 | Migrasi | golang-migrate, file SQL di `migrations/` |
 | Logging | `log/slog` lewat `pkg/mlog` |
 | Tracing | OpenTelemetry lewat `pkg/otelutil` |
+| Metrik | OpenTelemetry Metrics → Prometheus lewat `pkg/metrics` (listener `/metrics` terpisah). Katalog di `METRICS.md` |
 | Spreadsheet | `github.com/xuri/excelize/v2` lewat `pkg/spreadsheet` (jangan import excelize langsung di business) |
 | Sanitasi HTML | `github.com/microcosm-cc/bluemonday` lewat `pkg/richtext` (jangan buat policy sendiri) |
 | Cache (opsional) | In-memory bawaan; Redis (`github.com/redis/go-redis/v9`) bila `REDIS_URL` di-set, lewat `pkg/bytecache` (jangan import go-redis di business) |
@@ -43,6 +44,7 @@ apps/server/
 ├── pkg/                     # Utilitas reusable, TIDAK tahu domain bisnis
 │   ├── db-pg/  errr/  mlog/  middleware/  otelutil/  password/  securetoken/
 │   ├── spreadsheet/  storage/  ttlcache/  bytecache/  richtext/  psychometrics/
+│   ├── metrics/             # meter provider + /metrics; metricstest/ untuk test
 ├── migrations/              # 000001_xxx.up.sql / .down.sql
 └── loadtest/                # skrip k6 uji beban (bukan bagian binary); lihat loadtest/README.md
 ```
@@ -285,6 +287,10 @@ Untuk 4xx, pesan dari `errr.WithMessage` (mis. "setup already completed", "inval
 - Selalu varian `...Context(ctx, ...)` supaya `trace_id` ikut.
 - Level: `Info` untuk kejadian bisnis penting, `Warn` untuk input buruk/dependency terganggu, `Error` untuk kegagalan yang perlu ditindaklanjuti.
 - Nama tracer: `doexam.service.<domain>`. Nama span: `<Service>.<Method>`.
+- Metrik: instrumen dibuat dengan `otel.Meter("doexam.service.<domain>")`, nama `doexam.<area>.<hal>` + unit OTel (`s`, `By`, `{event}`); exporter menambah sufiks Prometheus (`_seconds`, `_total`). Daftarkan di `METRICS.md`.
+- Label metrik hanya nilai berhingga. **Dilarang** memakai ID (attempt, user, sesi, tenant), IP, username, path mentah, atau pesan error sebagai label. Data per entitas ada di log & trace.
+- Hitung setelah transaksi commit bila memungkinkan (lihat `AttemptService.Sync`). String dari Fiber (`c.Method()`, `c.Path()`) wajib di-`strings.Clone` sebelum jadi atribut, karena buffernya dipakai ulang.
+- Test metrik memakai `pkg/metrics/metricstest` (meter provider in-memory).
 
 ## 11. Penamaan & Gaya
 

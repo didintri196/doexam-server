@@ -34,7 +34,9 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 		return modelAttempt.SyncDTO{}, &errr.ValidationError{Fields: map[string]string{"events": fmt.Sprintf("max %d per batch", modelAttempt.MaxEventsPerBatch)}}
 	}
 	var out modelAttempt.SyncDTO
+	var tally *syncTally
 	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
+		tally = newSyncTally()            // a retried transaction starts over
 		a, err := s.own(ctx, p, id, true) // row lock serializes concurrent batches of one attempt
 		if err != nil {
 			return err
@@ -49,6 +51,9 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 		}
 		if a.Status != modelAttempt.StatusInProgress && a.Status != modelAttempt.StatusLocked {
 			rejectAll(&out, in.Events, "attempt_closed")
+			for _, ev := range in.Events {
+				tally.reject(ev.Type, "attempt_closed")
+			}
 			return nil
 		}
 		if snap.SecurityProfile == modelExam.SecurityStandard && a.ActiveDeviceID != nil && *a.ActiveDeviceID != deviceID {
@@ -84,6 +89,7 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 			reason, item := s.checkEvent(ev, a, snap, byID, open, items, now)
 			if reason != "" {
 				out.Rejected = append(out.Rejected, modelAttempt.Rejected{ClientEventID: ev.ClientEventID, Reason: reason})
+				tally.reject(ev.Type, reason)
 				continue
 			}
 			var response []byte
@@ -91,6 +97,7 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 				var bad string
 				if response, bad = normalizeResponse(item, ev.Payload); bad != "" {
 					out.Rejected = append(out.Rejected, modelAttempt.Rejected{ClientEventID: ev.ClientEventID, Reason: bad})
+					tally.reject(ev.Type, bad)
 					continue
 				}
 			}
@@ -108,12 +115,14 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 			}
 			if !inserted {
 				out.Duplicates++
+				tally.duplicates[eventType(ev.Type)]++
 				continue
 			}
 			if err := s.apply(ctx, a, ev, item, response, now); err != nil {
 				return err
 			}
 			out.Accepted++
+			tally.accept(ev, now)
 			maxSeq = max(maxSeq, ev.ClientSeq)
 		}
 		a.LastSeenAt, a.LastEventSeq = &now, maxSeq
@@ -128,6 +137,8 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 		return modelAttempt.SyncDTO{}, fail(span, err)
 	}
 	out.ServerTime = s.now().UTC()
+	s.metrics.sync(ctx, len(in.Events), tally)
+	s.metrics.seen(id, out.Status, out.ServerTime)
 	return out, nil
 }
 

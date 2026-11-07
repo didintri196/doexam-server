@@ -10,7 +10,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"gorm.io/gorm"
 
 	"doexam/app/server/handler"
@@ -32,6 +31,7 @@ import (
 	"doexam/pkg/bytecache"
 	dbpg "doexam/pkg/db-pg"
 	"doexam/pkg/mediaurl"
+	"doexam/pkg/metrics"
 	"doexam/pkg/middleware"
 	"doexam/pkg/password"
 	"doexam/pkg/storage"
@@ -62,21 +62,29 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	mediaRepo := media.NewMediaRepo(db)
 
 	// ── External Providers ─────────────────────────────────────
-	hasher := password.NewHasher(password.DefaultParams, 0)
+	hasher := password.NewHasher(password.DefaultParams, 0).Named("login")
 	// Imports hash with half the CPUs and their own limit, so logins keep flowing.
-	importHasher := password.NewHasher(password.DefaultParams, max(1, runtime.NumCPU()/2))
-	fileStore, err := storage.NewLocalStore(cfg.StorageDir)
+	importHasher := password.NewHasher(password.DefaultParams, max(1, runtime.NumCPU()/2)).Named("import")
+	localStore, err := storage.NewLocalStore(cfg.StorageDir)
 	if err != nil {
 		return nil, err
 	}
+	fileStore := storage.Instrument(localStore)
 	credentialVault := ttlcache.New[[]modelImport.Credential](credentialTTL)
-	mediaKey, err := mediaSigningKey(context.Background(), cfg.MediaSigningKey, fileStore)
+	mediaKey, err := mediaSigningKey(context.Background(), cfg.MediaSigningKey, localStore)
 	if err != nil {
 		return nil, err
 	}
 	// Links live ≥12 h (a long exam day) and change once an hour, so caches can reuse them.
 	mediaSigner := mediaurl.NewSigner(mediaKey, 12*time.Hour, time.Hour)
-	contentCache, closeCache := newContentCache(cfg, logger)
+	contentCache, closeCache, pingCache := newContentCache(cfg, logger)
+	deps := map[string]metrics.Check{"postgres": dbPinger.Ping}
+	if pingCache != nil {
+		deps["redis"] = pingCache
+	}
+	if err := errors.Join(metrics.RegisterDependencies(deps, 15*time.Second), metrics.RegisterDiskFree("files", cfg.StorageDir)); err != nil {
+		return nil, err
+	}
 
 	// ── Services (Core) ────────────────────────────────────────
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
@@ -111,7 +119,9 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	mediaHandler := handler.NewMediaHandler(mediaSvc)
 
 	// ── Middleware ──────────────────────────────────────────────
-	app.Use(recover.New())
+	httpMetrics := middleware.NewHTTPMetrics()
+	app.Use(httpMetrics.Handler(app, "/healthz", "/readyz")) // outermost: sees panics as 500
+	app.Use(httpMetrics.Recover(logger))
 	app.Use(middleware.Tracing(cfg.OTELService))
 	app.Use(middleware.RequestLogger(logger))
 
@@ -122,9 +132,9 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 		Max:          10,
 		Expiration:   time.Minute,
 		KeyGenerator: loginLimiterKey,
-		LimitReached: tooManyRequests,
+		LimitReached: tooManyRequests(httpMetrics, "login"),
 	})
-	setupLimiter := limiter.New(limiter.Config{Max: 5, Expiration: time.Minute, LimitReached: tooManyRequests})
+	setupLimiter := limiter.New(limiter.Config{Max: 5, Expiration: time.Minute, LimitReached: tooManyRequests(httpMetrics, "setup")})
 
 	// ── Routes ─────────────────────────────────────────────────
 	app.Get("/healthz", healthHandler.Healthz)
@@ -314,23 +324,27 @@ const contentRedisTTL = 24 * time.Hour
 
 // newContentCache returns the item content cache: Redis when REDIS_URL is set, an
 // in-memory LRU otherwise. An unreachable Redis is only a warning: every read falls
-// back to the database until it answers.
-func newContentCache(cfg config.DoExamConfig, logger *slog.Logger) (attempt.ContentCache, func() error) {
+// back to the database until it answers. The last value pings Redis (nil for memory).
+func newContentCache(cfg config.DoExamConfig, logger *slog.Logger) (attempt.ContentCache, func() error, metrics.Check) {
+	memory := func() (attempt.ContentCache, func() error, metrics.Check) {
+		return bytecache.Instrument(bytecache.NewMemory(cfg.ContentCacheMB<<20), "memory"), func() error { return nil }, nil
+	}
 	if cfg.RedisURL == "" {
 		logger.InfoContext(context.Background(), "item content cache: in memory", slog.Int("max_mb", cfg.ContentCacheMB))
-		return bytecache.NewMemory(cfg.ContentCacheMB << 20), func() error { return nil }
+		return memory()
 	}
 	client, err := bytecache.OpenRedis(context.Background(), cfg.RedisURL)
 	if client == nil {
 		logger.ErrorContext(context.Background(), "item content cache: invalid REDIS_URL, using memory", slog.String("error", err.Error()))
-		return bytecache.NewMemory(cfg.ContentCacheMB << 20), func() error { return nil }
+		return memory()
 	}
 	if err != nil {
 		logger.WarnContext(context.Background(), "item content cache: redis not reachable yet", slog.String("error", err.Error()))
 	} else {
 		logger.InfoContext(context.Background(), "item content cache: redis")
 	}
-	return bytecache.NewRedis(client, "doexam:", contentRedisTTL), client.Close
+	ping := func(ctx context.Context) error { return client.Ping(ctx).Err() }
+	return bytecache.Instrument(bytecache.NewRedis(client, "doexam:", contentRedisTTL), "redis"), client.Close, ping
 }
 
 // loginLimiterKey is the rate-limit key for login: client IP + tenant + username.
@@ -343,6 +357,10 @@ func loginLimiterKey(c *fiber.Ctx) string {
 	return c.IP() + "|" + strings.ToLower(strings.TrimSpace(body.Tenant)) + "|" + strings.ToLower(strings.TrimSpace(body.Username))
 }
 
-func tooManyRequests(c *fiber.Ctx) error {
-	return handler.ErrorResponse(c, fiber.StatusTooManyRequests, "too many requests", nil)
+// tooManyRequests answers 429 and counts the hit of the named limiter.
+func tooManyRequests(m *middleware.HTTPMetrics, limiter string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		m.RateLimited(c.UserContext(), limiter)
+		return handler.ErrorResponse(c, fiber.StatusTooManyRequests, "too many requests", nil)
+	}
 }
