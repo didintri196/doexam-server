@@ -264,12 +264,28 @@ make db/migrations/version             # versi migrasi saat ini
 
 Target `db/migrations/*` membaca `DATABASE_URL` dari `.env` (atau environment).
 
+## HTTPS di jaringan lab
+
+Browser hanya mengizinkan kamera, berbagi layar, dan Keyboard Lock di HTTPS (atau `localhost`). Instalasi lab yang dibuka lewat `http://192.168.x.x` tidak bisa memakai fitur itu. Tanpa domain publik, pakai CA lokal:
+
+```bash
+doexam tls init                       # nama & IP mesin ini; atau: doexam tls init 192.168.1.10 ujian.lab
+TLS_CERT_FILE=./data/tls/server.crt TLS_KEY_FILE=./data/tls/server.key doexam
+```
+
+- `tls init` membuat CA sekali saja (`ca.crt` + `ca.key`). Menjalankannya lagi (mis. IP server berubah, atau sertifikat hampir habis, berlaku 397 hari) hanya menerbitkan sertifikat server baru, jadi PC lab tidak perlu memasang ulang CA.
+- Pasang `ca.crt` sebagai *trusted root* di setiap PC lab, sekali saja: Windows `certutil -addstore -f Root ca.crt` (atau GPO), macOS Keychain Access → System → "Always Trust", Linux/Chrome `certutil -d sql:$HOME/.pki/nssdb -A -t C,, -n doexam -i ca.crt`. Cocokkan sidik jari SHA-256 yang dicetak `tls init`.
+- **`ca.key` rahasia**: siapa pun yang memilikinya bisa memalsukan situs apa pun di PC yang memercayai CA ini. Simpan cadangannya di luar server.
+- Di belakang reverse proxy/ingress yang sudah memegang TLS (Helm, nginx), biarkan `TLS_*` kosong.
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APP_ENV` | `development` | `development` / `staging` / `production` |
 | `PORT` | `8080` | Port server |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | _(kosong)_ | Sertifikat (PEM, boleh berisi rantai) dan kunci privat. Keduanya diisi = server melayani **HTTPS** di `PORT`. Lihat [HTTPS di jaringan lab](#https-di-jaringan-lab) |
+| `TLS_DIR` | `./data/tls` | Folder tempat `doexam tls init` menulis CA lokal dan sertifikat server |
 | `DATABASE_URL` | `postgres://doexam:secret@localhost:5433/doexam?sslmode=disable` | DSN PostgreSQL (wajib di-set di production) |
 | `STORAGE_DIR` | `./data/storage` | Folder file upload (impor, logo, media soal). Di Docker: volume `storage` |
 | `MEDIA_SIGNING_KEY` | _(dibuat otomatis)_ | Kunci HMAC link media (hex/base64, ≥16 byte). Kosong = dibuat sekali lalu disimpan di `STORAGE_DIR/system/media-signing.key`. Wajib sama di semua instance bila server lebih dari satu |

@@ -127,8 +127,14 @@ func main() {
 
 	go func() {
 		addr := fmt.Sprintf(":%s", cfg.DoExam.ServerPort)
-		logger.Info("server starting", slog.String("address", addr))
-		if err := app.Listen(addr); err != nil {
+		logger.Info("server starting", slog.String("address", addr), slog.Bool("tls", cfg.DoExam.TLSEnabled()))
+		var err error
+		if cfg.DoExam.TLSEnabled() {
+			err = app.ListenTLS(addr, cfg.DoExam.TLSCertFile, cfg.DoExam.TLSKeyFile)
+		} else {
+			err = app.Listen(addr)
+		}
+		if err != nil {
 			logger.Error("server error", slog.String("error", err.Error()))
 			os.Exit(1)
 		}

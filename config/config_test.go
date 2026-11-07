@@ -26,6 +26,9 @@ func TestValidateMetrics(t *testing.T) {
 		{"otlp without endpoint", func(c *DoExamConfig) { c.OTELMetricsExporter = "otlp" }, "OTEL_EXPORTER_OTLP_ENDPOINT"},
 		{"otlp with endpoint", func(c *DoExamConfig) { c.OTELMetricsExporter = "otlp"; c.OTELEndpoint = "collector:4317" }, ""},
 		{"unknown exporter", func(c *DoExamConfig) { c.OTELMetricsExporter = "prometheus" }, "OTEL_METRICS_EXPORTER"},
+		{"tls cert without key", func(c *DoExamConfig) { c.TLSCertFile = "server.crt" }, "TLS_KEY_FILE"},
+		{"tls key without cert", func(c *DoExamConfig) { c.TLSKeyFile = "server.key" }, "TLS_CERT_FILE"},
+		{"tls pair", func(c *DoExamConfig) { c.TLSCertFile, c.TLSKeyFile = "server.crt", "server.key" }, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
