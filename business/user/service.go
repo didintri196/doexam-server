@@ -35,20 +35,23 @@ type UserService struct {
 	storer UserStorer
 	tx     TxManager
 	hasher PasswordHasher
-	now    func() time.Time
-	tracer trace.Tracer
-	logger *slog.Logger
+	// sessions drops cached logins after a change that revokes or alters access
+	sessions SessionForgetter
+	now      func() time.Time
+	tracer   trace.Tracer
+	logger   *slog.Logger
 }
 
 // NewUserService returns a concrete UserService.
-func NewUserService(storer UserStorer, tx TxManager, hasher PasswordHasher, logger *slog.Logger) *UserService {
+func NewUserService(storer UserStorer, tx TxManager, hasher PasswordHasher, sessions SessionForgetter, logger *slog.Logger) *UserService {
 	return &UserService{
-		storer: storer,
-		tx:     tx,
-		hasher: hasher,
-		now:    time.Now,
-		tracer: otel.Tracer("doexam.service.user"),
-		logger: logger,
+		storer:   storer,
+		tx:       tx,
+		hasher:   hasher,
+		sessions: sessions,
+		now:      time.Now,
+		tracer:   otel.Tracer("doexam.service.user"),
+		logger:   logger,
 	}
 }
 
@@ -282,6 +285,9 @@ func (s *UserService) Update(ctx context.Context, p modelAuth.Principal, id stri
 			EntityType: "user", EntityID: id, Before: before, After: dto, Client: client,
 		}))
 	})
+	if err == nil {
+		s.sessions.ForgetUser(p.TenantID, id) // status or roles may have changed
+	}
 	return dto, err
 }
 
@@ -296,7 +302,7 @@ func (s *UserService) Delete(ctx context.Context, p modelAuth.Principal, id stri
 	if id == p.UserID {
 		return fail(span, errSelf)
 	}
-	return s.run(ctx, span, p, func(ctx context.Context) error {
+	err := s.run(ctx, span, p, func(ctx context.Context) error {
 		u, roles, err := s.load(ctx, id)
 		if err != nil {
 			return err
@@ -317,6 +323,11 @@ func (s *UserService) Delete(ctx context.Context, p modelAuth.Principal, id stri
 			EntityType: "user", EntityID: id, Before: modelUser.ToDTO(u, roles), Client: client,
 		}))
 	})
+	if err != nil {
+		return err
+	}
+	s.sessions.ForgetUser(p.TenantID, id)
+	return nil
 }
 
 // ResetPassword sets a new temporary password (returned once), forces a change at
@@ -361,6 +372,7 @@ func (s *UserService) ResetPassword(ctx context.Context, p modelAuth.Principal, 
 	if err != nil {
 		return modelUser.PasswordResetDTO{}, err
 	}
+	s.sessions.ForgetUser(p.TenantID, id) // their sessions were revoked
 	return modelUser.PasswordResetDTO{TemporaryPassword: pw}, nil
 }
 

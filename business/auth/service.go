@@ -40,18 +40,21 @@ type AuthService struct {
 	tx         TxManager
 	hasher     PasswordHasher
 	sessionTTL time.Duration
+	principals *principalCache // nil: every request reads the database
 	now        func() time.Time
 	tracer     trace.Tracer
 	logger     *slog.Logger
 }
 
 // NewAuthService returns a concrete AuthService.
-func NewAuthService(storer AuthStorer, tx TxManager, hasher PasswordHasher, sessionTTL time.Duration, logger *slog.Logger) *AuthService {
+// cacheTTL is how long a resolved token is trusted without reading the database (0 disables).
+func NewAuthService(storer AuthStorer, tx TxManager, hasher PasswordHasher, sessionTTL, cacheTTL time.Duration, logger *slog.Logger) *AuthService {
 	return &AuthService{
 		storer:     storer,
 		tx:         tx,
 		hasher:     hasher,
 		sessionTTL: sessionTTL,
+		principals: newPrincipalCache(cacheTTL),
 		now:        time.Now,
 		tracer:     otel.Tracer("doexam.service.auth"),
 		logger:     logger,
@@ -219,6 +222,14 @@ func (s *AuthService) authenticate(ctx context.Context, token string) (modelAuth
 		return modelAuth.Principal{}, errr.ErrUnauthorized
 	}
 
+	hash := securetoken.Hash(token)
+	key := string(hash)
+	now := s.now().UTC()
+	if p, ok := s.principals.get(key, now); ok {
+		return p, nil
+	}
+	st := s.principals.stamp(now) // before reading: see principalCache
+
 	tenant, err := s.storer.FindTenantByID(ctx, tenantID)
 	if errors.Is(err, errr.ErrNotFound) || (err == nil && !tenant.IsActive) {
 		return modelAuth.Principal{}, errr.ErrUnauthorized
@@ -227,16 +238,17 @@ func (s *AuthService) authenticate(ctx context.Context, token string) (modelAuth
 		return modelAuth.Principal{}, err
 	}
 
-	now := s.now().UTC()
 	var p modelAuth.Principal
+	var sessionExpires time.Time
 	err = s.tx.WithTenant(ctx, tenantID, func(ctx context.Context) error {
-		session, err := s.storer.FindSessionByHash(ctx, securetoken.Hash(token))
+		session, err := s.storer.FindSessionByHash(ctx, hash)
 		if err != nil {
 			return err
 		}
 		if session.RevokedAt != nil || !now.Before(session.ExpiresAt) {
 			return errr.ErrUnauthorized
 		}
+		sessionExpires = session.ExpiresAt
 		user, err := s.storer.FindUserByID(ctx, session.UserID)
 		if err != nil {
 			return err
@@ -266,7 +278,15 @@ func (s *AuthService) authenticate(ctx context.Context, token string) (modelAuth
 	if err != nil {
 		return modelAuth.Principal{}, err
 	}
+	s.principals.put(key, p, st, sessionExpires, s.now().UTC())
 	return p, nil
+}
+
+// ForgetUser drops the cached principals of a user, so a revoked session or changed
+// status or roles take effect on this node at the next request. Call it after the
+// change's transaction commits (other nodes follow within AUTH_CACHE_TTL).
+func (s *AuthService) ForgetUser(tenantID, userID string) {
+	s.principals.forgetUser(tenantID, userID, s.now().UTC())
 }
 
 // Me returns the profile, tenant, roles and permissions of the principal.
@@ -320,6 +340,7 @@ func (s *AuthService) Logout(ctx context.Context, p modelAuth.Principal, client 
 		span.RecordError(err)
 		return err
 	}
+	s.ForgetUser(p.TenantID, p.UserID) // the revoked token must stop working now
 	return nil
 }
 
@@ -372,7 +393,7 @@ func (s *AuthService) changePassword(ctx context.Context, p modelAuth.Principal,
 		return fmt.Errorf("hash password: %w", err)
 	}
 
-	return s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
+	err = s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
 		if err := s.storer.UpdatePassword(ctx, user.ID, hash); err != nil {
 			return err
 		}
@@ -381,6 +402,11 @@ func (s *AuthService) changePassword(ctx context.Context, p modelAuth.Principal,
 		}
 		return s.storer.CreateAuditLog(ctx, auditEntry(p.TenantID, user.ID, modelAudit.ActionPasswordChange, "user", user.ID, nil, client))
 	})
+	if err != nil {
+		return err
+	}
+	s.ForgetUser(p.TenantID, user.ID) // the other sessions were revoked
+	return nil
 }
 
 func auditEntry(tenantID, actorID, action, entityType, entityID string, after map[string]any, client modelAudit.Client) *modelAudit.AuditLogEntity {

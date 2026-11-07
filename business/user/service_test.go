@@ -163,8 +163,20 @@ var (
 	noPermsP = modelAuth.Principal{TenantID: tenantID, UserID: siswaID, Permissions: []string{modelAuth.PermAttemptTake}}
 )
 
+// fakeForgetter records which users' cached logins were dropped.
+type fakeForgetter struct{ forgotten []string }
+
+func (f *fakeForgetter) ForgetUser(tenantID, userID string) {
+	f.forgotten = append(f.forgotten, tenantID+"/"+userID)
+}
+
 func newService(store *fakeStore) *UserService {
-	return NewUserService(store, fakeTx{}, fakeHasher{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewUserService(store, fakeTx{}, fakeHasher{}, &fakeForgetter{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+// forgotten reports whether the service dropped the cached logins of userID.
+func forgotten(svc *UserService, userID string) bool {
+	return slices.Contains(svc.sessions.(*fakeForgetter).forgotten, tenantID+"/"+userID)
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -273,9 +285,14 @@ func TestUpdateGuards(t *testing.T) {
 			if tt.withAdmin2 {
 				store.addAdmin(admin2ID)
 			}
-			_, err := newService(store).Update(context.Background(), adminP, tt.target, tt.in, modelAudit.Client{})
+			svc := newService(store)
+			_, err := svc.Update(context.Background(), adminP, tt.target, tt.in, modelAudit.Client{})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			// a saved change (status, roles) must drop the user's cached logins; a refused one must not
+			if got := forgotten(svc, tt.target); got != (tt.wantErr == nil) {
+				t.Fatalf("cached logins dropped = %v, want %v", got, tt.wantErr == nil)
 			}
 			if got := slices.Contains(store.revoked, tt.target); got != tt.wantRevoke {
 				t.Fatalf("sessions revoked = %v, want %v", got, tt.wantRevoke)
@@ -304,9 +321,13 @@ func TestDelete(t *testing.T) {
 			if tt.withAdmin2 {
 				store.addAdmin(admin2ID)
 			}
-			err := newService(store).Delete(context.Background(), adminP, tt.target, modelAudit.Client{})
+			svc := newService(store)
+			err := svc.Delete(context.Background(), adminP, tt.target, modelAudit.Client{})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if got := forgotten(svc, tt.target); got != (tt.wantErr == nil) {
+				t.Fatalf("cached logins dropped = %v, want %v", got, tt.wantErr == nil)
 			}
 			_, exists := store.users[tt.target]
 			if exists != (tt.wantErr != nil) {
@@ -339,6 +360,9 @@ func TestResetPassword(t *testing.T) {
 	}
 	if !slices.Contains(store.revoked, siswaID) {
 		t.Fatal("reset must revoke sessions")
+	}
+	if !forgotten(svc, siswaID) {
+		t.Fatal("reset must drop the user's cached logins")
 	}
 	if _, err := svc.ResetPassword(context.Background(), adminP, adminID, modelAudit.Client{}); !errors.Is(err, errr.ErrForbidden) {
 		t.Fatalf("reset yourself: err = %v, want ErrForbidden", err)

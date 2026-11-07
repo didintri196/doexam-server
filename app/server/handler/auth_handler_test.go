@@ -22,7 +22,7 @@ import (
 // business/auth tests and the end-to-end check against PostgreSQL).
 func newAuthApp() *fiber.App {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := NewAuthHandler(auth.NewAuthService(nil, nil, nil, time.Hour, logger))
+	h := NewAuthHandler(auth.NewAuthService(nil, nil, nil, time.Hour, 0, logger))
 
 	app := fiber.New()
 	app.Post("/login", h.Login)

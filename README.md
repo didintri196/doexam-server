@@ -259,5 +259,6 @@ Target `db/migrations/*` membaca `DATABASE_URL` dari `.env` (atau environment).
 | `REDIS_URL` | _(kosong)_ | Redis untuk cache konten soal (`redis://host:6379/0`, `rediss://` untuk TLS), dipakai bersama antar-instance. Kosong = cache in-memory. Redis mati = baca dari PostgreSQL, ujian tetap jalan |
 | `CONTENT_CACHE_MB` | `64` | Batas cache konten soal in-memory (MB), dipakai bila `REDIS_URL` kosong |
 | `AUTH_SESSION_TTL` | `12h` | Masa berlaku sesi login (format durasi Go: `12h`, `90m`) |
+| `AUTH_CACHE_TTL` | `30s` | Lama hasil validasi token login dipercaya tanpa membaca database (`0` = mati, maks. `5m`). Logout, suspend, ganti peran, dan reset password berlaku seketika di server yang sama; di server lain paling lambat sebesar nilai ini |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(kosong)_ | Endpoint OTLP gRPC; kosong = tracing mati |
 | `OTEL_SERVICE_NAME` | `doexam-api` | Nama service di tracing |
