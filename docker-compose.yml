@@ -32,6 +32,18 @@ services:
       timeout: 3s
       retries: 5
 
+  # one-shot: applies the embedded migrations, then the api starts
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["migrate", "up"]
+    environment:
+      DATABASE_URL: postgres://doexam:secret@postgres:5432/doexam?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build:
       context: .
@@ -56,6 +68,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   # ── Monitoring (MONITORING.md) ──────────────────────────────
   # Prometheus scrape /metrics API di host.docker.internal:9464: berlaku untuk service

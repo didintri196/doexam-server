@@ -1,0 +1,12 @@
+.git
+.github
+bin/
+tmp/
+data/
+monitoring/
+loadtest/
+*.md
+.env
+.env.*
+!.env.example
+**/*_test.go

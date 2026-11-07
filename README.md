@@ -281,3 +281,7 @@ Target `db/migrations/*` membaca `DATABASE_URL` dari `.env` (atau environment).
 | `METRICS_ADDR` | `127.0.0.1:9464` | Listener `/metrics` (Prometheus), terpisah dari port API. `off` = mati. Katalog metrik: [METRICS.md](METRICS.md) |
 | `METRICS_TOKEN` | _(kosong)_ | Bila diisi, scrape wajib `Authorization: Bearer <token>`. Wajib di production bila `METRICS_ADDR` bukan loopback |
 | `OTEL_METRICS_EXPORTER` | `none` | `otlp` = metrik juga dikirim ke `OTEL_EXPORTER_OTLP_ENDPOINT` |
+
+## Lisensi
+
+DoExam dirilis di bawah [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Anda bebas memakai, mempelajari, mengubah, dan mendistribusikannya. Bila versi yang diubah dijalankan sebagai layanan untuk pengguna lain, kode sumbernya wajib dibuka untuk pengguna tersebut.
