@@ -488,25 +488,6 @@ func (r *AttemptRepo) OverdueAttempts(ctx context.Context, sessionID string, cut
 	return out, wrap(err, "overdue attempts")
 }
 
-func (r *AttemptRepo) Monitor(ctx context.Context, sessionID string) ([]MonitorAttempt, error) {
-	out := []MonitorAttempt{}
-	err := dbpg.Conn(ctx, r.db).Raw(`
-		SELECT sp.user_id, u.username, u.full_name, sp.seat, sp.attendance,
-		       a.id AS attempt_id, a.status, a.deadline_at, a.last_seen_at, a.active_device_id AS device_id, a.final_score,
-		       coalesce((SELECT count(*) FROM attempt_items ai WHERE ai.attempt_id = a.id AND ai.response IS NOT NULL), 0) AS answered,
-		       coalesce((SELECT count(*) FROM attempt_items ai WHERE ai.attempt_id = a.id), 0) AS item_count,
-		       coalesce((SELECT count(*) FROM attempt_events ev WHERE ev.attempt_id = a.id AND ev.type IN ?), 0) AS violations
-		FROM exam_session_participants sp
-		JOIN users u ON u.id = sp.user_id
-		LEFT JOIN LATERAL (
-			SELECT * FROM attempts x WHERE x.session_id = sp.session_id AND x.user_id = sp.user_id
-			ORDER BY x.attempt_no DESC LIMIT 1
-		) a ON true
-		WHERE sp.session_id = ?
-		ORDER BY u.full_name, u.id`, modelAttempt.ViolationEventTypes, sessionID).Scan(&out).Error
-	return out, wrap(err, "monitor")
-}
-
 func (r *AttemptRepo) MyAttempts(ctx context.Context, userID string) ([]modelAttempt.MyAttemptDTO, error) {
 	out := []modelAttempt.MyAttemptDTO{}
 	err := dbpg.Conn(ctx, r.db).Table("attempts a").

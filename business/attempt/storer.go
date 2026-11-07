@@ -59,21 +59,20 @@ type ItemRow struct {
 
 // MonitorAttempt is the latest attempt of each participant of a session, for the dashboard.
 type MonitorAttempt struct {
-	UserID     string
-	Username   string
-	FullName   string
-	Seat       *string
-	Attendance string
-	AttemptID  *string
-	Status     *modelAttempt.Status
-	Answered   int
-	ItemCount  int
-	DeadlineAt *time.Time
-	LastSeenAt *time.Time
-	Violations int
-	DeviceID   *string
-	FinalScore *float64
-	// filled by MonitorPage/MonitorWatch only
+	UserID          string
+	Username        string
+	FullName        string
+	Seat            *string
+	Attendance      string
+	AttemptID       *string
+	Status          *modelAttempt.Status
+	Answered        int
+	ItemCount       int
+	DeadlineAt      *time.Time
+	LastSeenAt      *time.Time
+	Violations      int
+	DeviceID        *string
+	FinalScore      *float64
 	FocusLost       int
 	FullscreenExit  int
 	DeviceChanged   int
@@ -144,7 +143,6 @@ type AttemptStorer interface {
 	// the attempt deadline, or a started and open section's deadline, is before cutoff.
 	// Rows locked by another transaction are skipped (that request ticks them itself).
 	OverdueAttempts(ctx context.Context, sessionID string, cutoff time.Time) ([]modelAttempt.AttemptEntity, error)
-	Monitor(ctx context.Context, sessionID string) ([]MonitorAttempt, error)
 	// MonitorPage returns one page of a monitor view (or the watched participants when
 	// f.UserIDs is set), how many rows the view has, and the session's counts within
 	// f.GroupID/f.Seat, in one query. Only the page's rows get the costly per-attempt

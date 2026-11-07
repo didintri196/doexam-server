@@ -16,14 +16,17 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	modelAttempt "doexam/models/attempt"
 	dbpg "doexam/pkg/db-pg"
 )
 
 // TestIntegrationMonitorViews runs every monitor view against the largest session in the
 // database, after adding violations, locks and seats inside a transaction that is always
-// rolled back. Each view, paged to the end, must hold exactly the participants the legacy
-// full monitor says it should, once each, in the view's order; counts must match too.
+// rolled back. Each view, paged to the end, must hold exactly the participants an independent
+// reference query (the former full monitor) says it should, once each, in the view's order;
+// counts must match too.
 func TestIntegrationMonitorViews(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -88,7 +91,7 @@ func TestIntegrationMonitorViews(t *testing.T) {
 			}
 		}
 
-		legacy, err := repo.Monitor(ctx, sess.ID)
+		legacy, err := referenceMonitor(ctx, db, sess.ID)
 		if err != nil {
 			return err
 		}
@@ -134,7 +137,7 @@ func TestIntegrationMonitorViews(t *testing.T) {
 		}
 		for k, v := range want {
 			if counts[k] != v {
-				t.Errorf("counts[%s] = %d, legacy says %d", k, counts[k], v)
+				t.Errorf("counts[%s] = %d, reference says %d", k, counts[k], v)
 			}
 		}
 		if want["violations"] == 0 || want["locked"] == 0 {
@@ -175,7 +178,7 @@ func TestIntegrationMonitorViews(t *testing.T) {
 			}
 			t.Logf("view %-11s total %5d, first page %v", view, total, first)
 			if int(total) != expected || len(got) != expected {
-				t.Errorf("view %s: total %d, rows %d, legacy says %d", view, total, len(got), expected)
+				t.Errorf("view %s: total %d, rows %d, reference says %d", view, total, len(got), expected)
 				continue
 			}
 			seen := map[string]bool{}
@@ -187,7 +190,7 @@ func TestIntegrationMonitorViews(t *testing.T) {
 				l := byID[r.UserID]
 				if !match[view](l) || r.FocusLost+r.FullscreenExit+r.DeviceChanged != l.Violations || r.Idle != idle(l) ||
 					r.Answered != l.Answered || r.ItemCount != l.ItemCount {
-					t.Errorf("view %s row %d: %+v, legacy %+v", view, i, r, l)
+					t.Errorf("view %s row %d: %+v, reference %+v", view, i, r, l)
 					break
 				}
 				if i > 0 && !inOrder(view, got[i-1], r) {
@@ -319,4 +322,25 @@ func inOrder(view modelAttempt.MonitorView, a, b MonitorAttempt) bool {
 		return ok && (!tie || seat())
 	}
 	return seat()
+}
+
+// referenceMonitor is the former whole-session monitor query (per-participant subqueries,
+// no CTEs), kept here as an independent oracle for the views.
+func referenceMonitor(ctx context.Context, db *gorm.DB, sessionID string) ([]MonitorAttempt, error) {
+	out := []MonitorAttempt{}
+	err := dbpg.Conn(ctx, db).Raw(`
+		SELECT sp.user_id, u.username, u.full_name, sp.seat, sp.attendance,
+		       a.id AS attempt_id, a.status, a.deadline_at, a.last_seen_at, a.active_device_id AS device_id, a.final_score,
+		       coalesce((SELECT count(*) FROM attempt_items ai WHERE ai.attempt_id = a.id AND ai.response IS NOT NULL), 0) AS answered,
+		       coalesce((SELECT count(*) FROM attempt_items ai WHERE ai.attempt_id = a.id), 0) AS item_count,
+		       coalesce((SELECT count(*) FROM attempt_events ev WHERE ev.attempt_id = a.id AND ev.type IN ?), 0) AS violations
+		FROM exam_session_participants sp
+		JOIN users u ON u.id = sp.user_id
+		LEFT JOIN LATERAL (
+			SELECT * FROM attempts x WHERE x.session_id = sp.session_id AND x.user_id = sp.user_id
+			ORDER BY x.attempt_no DESC LIMIT 1
+		) a ON true
+		WHERE sp.session_id = ?
+		ORDER BY u.full_name, u.id`, modelAttempt.ViolationEventTypes, sessionID).Scan(&out).Error
+	return out, err
 }

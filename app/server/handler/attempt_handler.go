@@ -98,16 +98,6 @@ func (h *AttemptHandler) MyAttempts(c *fiber.Ctx) error {
 	return SuccessResponse(c, fiber.StatusOK, "attempts retrieved", out)
 }
 
-// Monitor handles GET /api/v1/sessions/:id/monitor (proctor dashboard).
-func (h *AttemptHandler) Monitor(c *fiber.Ctx) error {
-	logger := middleware.GetLogger(c)
-	dto, err := h.attemptSvc.Monitor(c.UserContext(), principal(c), c.Params("id"), clientInfo(c))
-	if err != nil {
-		return handleError(c, logger, "failed to load monitor", err)
-	}
-	return SuccessResponse(c, fiber.StatusOK, "monitor retrieved", dto)
-}
-
 // monitorPerPage: the monitor shows 10 cards per page (DOCS/PLAN/15-MONITOR-KARTU.md); a
 // larger per_page is capped so no poll ever loads more than one page of cards.
 const monitorPerPage = 10
