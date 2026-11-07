@@ -23,20 +23,27 @@ func NewReportHandler(reportSvc *report.ReportService) *ReportHandler {
 	return &ReportHandler{reportSvc: reportSvc}
 }
 
-// Recap handles GET /api/v1/exams/:id/recap?session_id&group_id.
+// Recap handles GET /api/v1/exams/:id/recap?session_id&group_id&page&per_page. Rows are one
+// page of participants; counts and meta.total cover every matching participant.
 func (h *ReportHandler) Recap(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
-	dto, err := h.reportSvc.Recap(c.UserContext(), principal(c), c.Params("id"), recapFilter(c))
+	page, perPage, err := parsePage(c)
+	if err != nil {
+		return handleError(c, logger, "invalid pagination", err)
+	}
+	f := recapFilter(c)
+	f.Page, f.PerPage = page, perPage
+	dto, total, err := h.reportSvc.Recap(c.UserContext(), principal(c), c.Params("id"), f)
 	if err != nil {
 		return handleError(c, logger, "failed to build recap", err)
 	}
-	return SuccessResponse(c, fiber.StatusOK, "recap retrieved", dto)
+	return PaginatedResponse(c, dto, int64(total), page, perPage)
 }
 
-// RecapExport handles GET /api/v1/exams/:id/recap/export?session_id&group_id (xlsx).
+// RecapExport handles GET /api/v1/exams/:id/recap/export?session_id&group_id (xlsx, every participant).
 func (h *ReportHandler) RecapExport(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
-	dto, err := h.reportSvc.Recap(c.UserContext(), principal(c), c.Params("id"), recapFilter(c))
+	dto, _, err := h.reportSvc.Recap(c.UserContext(), principal(c), c.Params("id"), recapFilter(c))
 	if err != nil {
 		return handleError(c, logger, "failed to build recap", err)
 	}

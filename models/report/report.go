@@ -5,10 +5,13 @@ import (
 	"time"
 )
 
-// RecapFilter narrows GET /api/v1/exams/:id/recap.
+// RecapFilter narrows GET /api/v1/exams/:id/recap. PerPage 0 means every participant
+// (the Excel export); otherwise one page of participants ordered by name.
 type RecapFilter struct {
 	SessionID string
 	GroupID   string
+	Page      int
+	PerPage   int
 }
 
 // Recap statuses.

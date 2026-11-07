@@ -85,14 +85,19 @@ func (h *ItemBankHandler) DeleteBank(c *fiber.Ctx) error {
 	return SuccessResponse(c, fiber.StatusOK, "item bank deleted", nil)
 }
 
-// ListMembers handles GET /api/v1/item-banks/:id/members.
+// ListMembers handles GET /api/v1/item-banks/:id/members?page&per_page.
 func (h *ItemBankHandler) ListMembers(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
-	out, err := h.bankSvc.ListMembers(c.UserContext(), principal(c), c.Params("id"))
+	page, perPage, err := parsePage(c)
+	if err != nil {
+		return handleError(c, logger, "invalid pagination", err)
+	}
+	out, total, err := h.bankSvc.ListMembers(c.UserContext(), principal(c), c.Params("id"),
+		modelBank.MemberFilter{Page: page, PerPage: perPage})
 	if err != nil {
 		return handleError(c, logger, "failed to list item bank members", err)
 	}
-	return SuccessResponse(c, fiber.StatusOK, "members retrieved", out)
+	return PaginatedResponse(c, out, total, page, perPage)
 }
 
 // SetMember handles POST /api/v1/item-banks/:id/members.

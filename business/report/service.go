@@ -45,13 +45,16 @@ func NewReportService(storer ReportStorer, tx TxManager, logger *slog.Logger) *R
 	return &ReportService{storer: storer, tx: tx, now: time.Now, tracer: otel.Tracer("doexam.service.report"), logger: logger}
 }
 
-// Recap returns every participant of the exam (optionally one session or group) with the
-// score that counts under the exam's attempt_scoring.
-func (s *ReportService) Recap(ctx context.Context, p modelAuth.Principal, examID string, f modelReport.RecapFilter) (modelReport.RecapDTO, error) {
+// Recap returns the participants of the exam (optionally one session or group) with the
+// score that counts under the exam's attempt_scoring, plus how many participants match.
+// With f.PerPage > 0 the rows are one page (paged in SQL) while counts cover every match;
+// with f.PerPage == 0 every participant is returned (the Excel export).
+func (s *ReportService) Recap(ctx context.Context, p modelAuth.Principal, examID string, f modelReport.RecapFilter) (modelReport.RecapDTO, int, error) {
 	ctx, span := s.tracer.Start(ctx, "ReportService.Recap", trace.WithAttributes(attribute.String("exam.id", examID)))
 	defer span.End()
 
 	var out modelReport.RecapDTO
+	total := 0
 	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
 		e, err := s.reportExam(ctx, p, examID, f.SessionID)
 		if err != nil {
@@ -65,12 +68,20 @@ func (s *ReportService) Recap(ctx context.Context, p modelAuth.Principal, examID
 			return err
 		}
 		out = buildRecap(e, rows)
+		if f.PerPage > 0 {
+			if out.Counts, err = s.storer.RecapCounts(ctx, examID, f); err != nil {
+				return err
+			}
+		}
+		for _, n := range out.Counts {
+			total += n
+		}
 		return nil
 	})
 	if err != nil {
-		return modelReport.RecapDTO{}, fail(span, err)
+		return modelReport.RecapDTO{}, 0, fail(span, err)
 	}
-	return out, nil
+	return out, total, nil
 }
 
 // buildRecap folds participant × attempt rows into one row per participant.

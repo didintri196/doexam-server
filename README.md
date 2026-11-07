@@ -106,7 +106,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | PATCH/DELETE | `/api/v1/competencies/:id` 🔒 | Ubah / pindah induk / hapus (409 bila punya anak atau dipakai soal) |
 | GET/POST | `/api/v1/item-banks` 🔒 | Bank yang bisa diakses (`subject_id`, `q`) / buat bank `{subject_id, name, description?}` (pembuat jadi owner) |
 | GET/PATCH/DELETE | `/api/v1/item-banks/:id` 🔒 | Detail (+`my_access`, `item_count`) / ubah / hapus bank kosong — ubah & hapus: owner |
-| GET/POST | `/api/v1/item-banks/:id/members` 🔒 | Anggota bank / set akses `{user_id, access: viewer\|editor\|owner}` (owner) |
+| GET/POST | `/api/v1/item-banks/:id/members` 🔒 | Anggota bank (berhalaman: `page`, `per_page`; pemilik dulu) / set akses `{user_id, access: viewer\|editor\|owner}` (owner) |
 | DELETE | `/api/v1/item-banks/:id/members/:user_id` 🔒 | Cabut akses (owner terakhir tidak bisa dicabut) |
 | GET/POST | `/api/v1/item-banks/:id/stimuli` 🔒 | Daftar / buat stimulus `{title, body}` |
 | GET/PATCH/DELETE | `/api/v1/stimuli/:id` 🔒 | Detail / ubah (versi baru bila terkunci) / hapus (409 bila dipakai soal) |
@@ -157,10 +157,10 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | GET | `/api/v1/exams/:id/grading/summary` 🔒 | Soal esai ujian + jumlah menunggu/sudah dinilai |
 | GET | `/api/v1/exams/:id/grading` 🔒 | Antrean koreksi esai. Query: `item_version_id`, `status` (pending\|graded\|all), `blind`, `page` |
 | GET/POST | `/api/v1/grading/items/:id` 🔒 | Detail jawaban (soal, rubrik, model jawaban, riwayat) / beri nilai `{score}` atau `{rubric_scores:[{criterion, score}]}` + `comment` |
-| GET/POST | `/api/v1/exams/:id/adjustments` 🔒 | Daftar / buat penyesuaian `{item_version_id, action: annul_full_credit\|annul_remove\|override_key, answer_key?, reason}` → regrade otomatis |
+| GET/POST | `/api/v1/exams/:id/adjustments` 🔒 | Daftar (berhalaman: `page`, `per_page`; terbaru dulu) / buat penyesuaian `{item_version_id, action: annul_full_credit\|annul_remove\|override_key, answer_key?, reason}` → regrade otomatis |
 | DELETE | `/api/v1/adjustments/:id` 🔒 | Cabut penyesuaian → regrade otomatis |
-| GET | `/api/v1/exams/:id/recap` 🔒 | Rekap nilai semua peserta (status, percobaan, nilai sesuai `attempt_scoring`, lulus). Query: `session_id`, `group_id` |
-| GET | `/api/v1/exams/:id/recap/export` 🔒 | Rekap nilai `.xlsx` (filter sama) |
+| GET | `/api/v1/exams/:id/recap` 🔒 | Rekap nilai peserta (status, percobaan, nilai sesuai `attempt_scoring`, lulus), berhalaman per peserta urut nama. Query: `session_id`, `group_id`, `page`, `per_page`. `counts` dan `meta.total` menghitung semua peserta yang cocok, bukan hanya halaman ini |
+| GET | `/api/v1/exams/:id/recap/export` 🔒 | Rekap nilai `.xlsx` (filter sama, semua peserta tanpa paginasi) |
 | GET/POST | `/api/v1/exams/:id/analysis` 🔒 | Analisis butir CTT (p, daya beda, distraktor, KR-20/α, statistik & histogram nilai). GET = tersimpan (dihitung bila belum ada), POST = hitung ulang. Query: `session_id` |
 | GET | `/api/v1/attempts/:id/report` 🔒 | Laporan individu (staf): nilai per section & kompetensi, tiap soal dengan jawaban, kunci, waktu, kunjungan, pelanggaran |
 | GET | `/api/v1/imports/templates/:kind` 🔒 | Unduh template `.xlsx` (`users` / `groups`) |
