@@ -32,6 +32,7 @@ apps/server/
 │   ├── main.go              # Load config, logger, OTEL, DB, server, graceful shutdown
 │   ├── route.go             # SATU-SATUNYA tempat wiring DI + registrasi route
 │   └── handler/             # HTTP handler (Fiber). <domain>_handler.go, response.go, error.go
+│   └── web/                 # Frontend ter-embed (go:embed dist/), disalin saat rilis; kosong = API saja
 ├── business/<domain>/       # CORE logic per domain
 │   ├── storer.go            # PORT: interface yang dibutuhkan service
 │   ├── repo.go              # ADAPTER: implementasi GORM dari interface

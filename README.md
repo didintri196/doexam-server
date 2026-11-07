@@ -19,6 +19,12 @@ Backend DoExam — platform ujian open source (CBT & CAT).
 | Logging | log/slog (structured) |
 | Architecture | Hexagonal (Ports & Adapters) |
 
+## Frontend ter-embed (binary tunggal)
+
+Binary bisa membawa frontend sendiri: hasil build `apps/client` (`dist/all`) disalin ke `app/server/web/dist/` sebelum `go build`, lalu disajikan di `/exam/` (peserta) dan `/app/` (panel), dengan `/` dialihkan ke `/exam/`. Header cache dan keamanannya sama dengan config nginx client (CSP per entry, aset ber-hash di-cache 1 tahun, `index.html`/`sw.js` `no-cache`). Bila build `*.br`/`*.gz` tersedia, file terkompres itu yang dikirim.
+
+Tanpa build (hanya placeholder `dist/.keep`), binary berjalan sebagai **API saja**. Ini dipakai untuk development dan image API-only. Perakitan binary lengkap dilakukan oleh repo payung `doexam`.
+
 ## Quick Start
 
 ```bash
