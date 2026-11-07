@@ -176,7 +176,7 @@ func setSecurityHeaders(c *fiber.Ctx) {
 	c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
 	c.Set(fiber.HeaderXFrameOptions, "DENY")
 	c.Set(fiber.HeaderReferrerPolicy, "same-origin")
-	c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	c.Set("Permissions-Policy", "camera=(self), microphone=(), geolocation=(), display-capture=(self)")
 }
 
 func isFile(files fs.FS, name string) bool {
