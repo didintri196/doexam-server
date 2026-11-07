@@ -21,6 +21,12 @@ type DoExamConfig struct {
 	ServerPort  string
 	Environment string
 
+	// HTTPS: serve TLS when both files are set (DOCS/PLAN/19-LIHAT-LAYAR-KAMERA.md §7).
+	// TLSDir is where `doexam tls init` writes a local CA and a server certificate.
+	TLSCertFile string
+	TLSKeyFile  string
+	TLSDir      string
+
 	// Database
 	DatabaseURL string
 
@@ -52,6 +58,9 @@ type DoExamConfig struct {
 	OTELMetricsExporter string
 }
 
+// TLSEnabled reports whether the API is served over HTTPS.
+func (c *DoExamConfig) TLSEnabled() bool { return c.TLSCertFile != "" && c.TLSKeyFile != "" }
+
 // MetricsEnabled reports whether metrics are collected at all.
 func (c *DoExamConfig) MetricsEnabled() bool {
 	return c.MetricsAddr != "" || c.OTELMetricsExporter == "otlp"
@@ -63,6 +72,9 @@ func Load() *Config {
 		DoExam: DoExamConfig{
 			ServerPort:          getEnv("PORT", "8080"),
 			Environment:         getEnv("APP_ENV", "development"),
+			TLSCertFile:         os.Getenv("TLS_CERT_FILE"),
+			TLSKeyFile:          os.Getenv("TLS_KEY_FILE"),
+			TLSDir:              getEnv("TLS_DIR", "./data/tls"),
 			DatabaseURL:         getEnv("DATABASE_URL", defaultDatabaseURL),
 			SessionTTL:          getDuration("AUTH_SESSION_TTL", 12*time.Hour),
 			AuthCacheTTL:        getOptionalDuration("AUTH_CACHE_TTL", 30*time.Second),
@@ -88,6 +100,9 @@ func (c *DoExamConfig) Validate() error {
 	}
 	if c.Environment == "production" && c.DatabaseURL == defaultDatabaseURL {
 		return fmt.Errorf("DATABASE_URL must be set in production")
+	}
+	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
+		return fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
 	}
 	if c.ContentCacheMB <= 0 {
 		return fmt.Errorf("CONTENT_CACHE_MB must be a positive number of megabytes")

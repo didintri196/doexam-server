@@ -25,6 +25,7 @@ func TestRunCommand(t *testing.T) {
 		{name: "unknown", args: []string{"bogus"}, wantHandled: true, wantCode: 2, wantErr: `unknown command "bogus"`},
 		{name: "migrate without action", args: []string{"migrate"}, wantHandled: true, wantCode: 2, wantErr: "Usage"},
 		// the config is checked before connecting (SessionTTL 0 is invalid here)
+		{name: "tls without action", args: []string{"tls"}, wantHandled: true, wantCode: 2, wantErr: "Usage"},
 		{name: "migrate with bad config", args: []string{"migrate", "up"}, wantHandled: true, wantCode: 1, wantErr: "config error"},
 	}
 	for _, tt := range tests {
@@ -38,5 +39,23 @@ func TestRunCommand(t *testing.T) {
 				t.Fatalf("stdout %q, stderr %q", out.String(), errOut.String())
 			}
 		})
+	}
+}
+
+func TestRunTLSInit(t *testing.T) {
+	cfg := config.DoExamConfig{Environment: "development", TLSDir: t.TempDir()}
+	var out, errOut bytes.Buffer
+	handled, code := runCommand([]string{"tls", "init", "192.168.1.10", "exam.lab"}, cfg, &out, &errOut)
+	if !handled || code != 0 {
+		t.Fatalf("code %d, stderr %s", code, errOut.String())
+	}
+	for _, want := range []string{"created a local CA", "192.168.1.10, exam.lab", "TLS_CERT_FILE=", "CA fingerprint"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if _, code := runCommand([]string{"tls", "init", "exam.lab"}, cfg, &out, &errOut); code != 0 || !strings.Contains(out.String(), "kept the existing CA") {
+		t.Fatalf("second run: code %d, %s", code, out.String())
 	}
 }
