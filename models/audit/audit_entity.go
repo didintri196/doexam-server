@@ -67,6 +67,9 @@ const (
 	ActionParticipantRemove   = "session.participant_remove"
 	ActionAnnouncementSend    = "session.announcement_send"
 	ActionAnnouncementRetract = "session.announcement_retract"
+	// live camera/screen views (DOCS/PLAN/19): who watched whom, when, for how long
+	ActionLiveViewStart = "session.live_view_start"
+	ActionLiveViewEnd   = "session.live_view_end"
 
 	ActionGradeManual      = "grade.manual"
 	ActionAdjustmentCreate = "grade.adjustment_create"

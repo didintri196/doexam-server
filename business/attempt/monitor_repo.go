@@ -37,6 +37,9 @@ var violationColumns = map[string]string{
 	modelAttempt.ViolationFocusLost:      "focus_lost",
 	modelAttempt.ViolationFullscreenExit: "fullscreen_exit",
 	modelAttempt.ViolationDeviceChanged:  "device_changed",
+	modelAttempt.ViolationCameraStopped:  "camera_stopped",
+	modelAttempt.ViolationScreenStopped:  "screen_stopped",
+	modelAttempt.ViolationExtraDisplay:   "extra_display",
 }
 
 // MonitorResult is one poll of the monitor: the page, how many rows the view has, and the
@@ -116,15 +119,35 @@ func (r *AttemptRepo) MonitorPage(ctx context.Context, sessionID string, f model
 		WHERE e.attempt_id IN (SELECT attempt_id FROM scope WHERE attempt_id IS NOT NULL)
 		  AND e.type IN ('FOCUS_LOST', 'FULLSCREEN_EXIT', 'DEVICE_CHANGED', 'LOCKED')
 		GROUP BY e.attempt_id
+	), md AS (
+		-- camera/screen/display events (DOCS/PLAN/19 §6.2), through attempt_events_media_idx
+		SELECT e.attempt_id,
+		       count(*) FILTER (WHERE e.type = 'CAMERA_STOPPED') AS camera_stopped,
+		       count(*) FILTER (WHERE e.type = 'SCREEN_SHARE_STOPPED') AS screen_stopped,
+		       count(*) FILTER (WHERE e.type = 'EXTRA_DISPLAY_DETECTED') AS extra_display,
+		       max(e.server_ts) FILTER (WHERE e.type IN ('CAMERA_STOPPED', 'SCREEN_SHARE_STOPPED', 'EXTRA_DISPLAY_DETECTED')) AS last_media_at,
+		       coalesce(max(e.server_ts) FILTER (WHERE e.type = 'CAMERA_STOPPED') > coalesce(max(e.server_ts) FILTER (WHERE e.type = 'CAMERA_RESUMED'), '-infinity'), false) AS camera_off,
+		       coalesce(max(e.server_ts) FILTER (WHERE e.type = 'SCREEN_SHARE_STOPPED') > coalesce(max(e.server_ts) FILTER (WHERE e.type = 'SCREEN_SHARE_RESUMED'), '-infinity'), false) AS screen_off,
+		       coalesce(max(e.server_ts) FILTER (WHERE e.type = 'EXTRA_DISPLAY_DETECTED') > coalesce(max(e.server_ts) FILTER (WHERE e.type = 'EXTRA_DISPLAY_REMOVED'), '-infinity'), false) AS extra_display_on
+		FROM attempt_events e
+		WHERE e.attempt_id IN (SELECT attempt_id FROM scope WHERE attempt_id IS NOT NULL)
+		  AND e.type IN ('CAMERA_STOPPED', 'CAMERA_RESUMED', 'SCREEN_SHARE_STOPPED', 'SCREEN_SHARE_RESUMED', 'EXTRA_DISPLAY_DETECTED', 'EXTRA_DISPLAY_REMOVED')
+		GROUP BY e.attempt_id
 	), rows AS (
 		SELECT s.*,
 		       coalesce(ev.focus_lost, 0) AS focus_lost,
 		       coalesce(ev.fullscreen_exit, 0) AS fullscreen_exit,
 		       coalesce(ev.device_changed, 0) AS device_changed,
-		       coalesce(ev.focus_lost, 0) + coalesce(ev.fullscreen_exit, 0) + coalesce(ev.device_changed, 0) AS violations,
-		       ev.last_violation_at, ev.locked_at,
+		       coalesce(md.camera_stopped, 0) AS camera_stopped,
+		       coalesce(md.screen_stopped, 0) AS screen_stopped,
+		       coalesce(md.extra_display, 0) AS extra_display,
+		       coalesce(ev.focus_lost, 0) + coalesce(ev.fullscreen_exit, 0) + coalesce(ev.device_changed, 0)
+		         + coalesce(md.camera_stopped, 0) + coalesce(md.screen_stopped, 0) + coalesce(md.extra_display, 0) AS violations,
+		       greatest(ev.last_violation_at, md.last_media_at) AS last_violation_at, ev.locked_at,
+		       coalesce(md.camera_off, false) AS camera_off, coalesce(md.screen_off, false) AS screen_off,
+		       coalesce(md.extra_display_on, false) AS extra_display_on,
 		       coalesce(s.status = 'in_progress' AND s.last_seen_at < ?, false) AS idle
-		FROM scope s LEFT JOIN ev ON ev.attempt_id = s.attempt_id
+		FROM scope s LEFT JOIN ev ON ev.attempt_id = s.attempt_id LEFT JOIN md ON md.attempt_id = s.attempt_id
 	), counts AS (
 		SELECT count(*) AS c_total,
 		       count(*) FILTER (WHERE attempt_id IS NULL) AS c_not_started,

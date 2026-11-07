@@ -147,10 +147,20 @@ const (
 	EventAnnouncementRead = "ANNOUNCEMENT_READ"
 	// EventMediaPlaysGranted: a proctor allowed extra plays of every limited clip (payload {plays}).
 	EventMediaPlaysGranted = "MEDIA_PLAYS_GRANTED"
+
+	// Camera, screen sharing and extra displays (DOCS/PLAN/19-LIHAT-LAYAR-KAMERA.md §4):
+	// the *_STOPPED / DETECTED events are violations; the monitor shows the latest state.
+	EventCameraStopped        = "CAMERA_STOPPED"
+	EventCameraResumed        = "CAMERA_RESUMED"
+	EventScreenShareStopped   = "SCREEN_SHARE_STOPPED"
+	EventScreenShareResumed   = "SCREEN_SHARE_RESUMED"
+	EventExtraDisplayDetected = "EXTRA_DISPLAY_DETECTED"
+	EventExtraDisplayRemoved  = "EXTRA_DISPLAY_REMOVED"
 )
 
 // ClientEventTypes may be sent by the exam client.
-var ClientEventTypes = []string{EventItemViewed, EventResponseSaved, EventFlagSet, EventFocusLost, EventFocusReturned, EventFullscreenExit, EventMediaPlayed, EventAnnouncementRead}
+var ClientEventTypes = []string{EventItemViewed, EventResponseSaved, EventFlagSet, EventFocusLost, EventFocusReturned, EventFullscreenExit, EventMediaPlayed, EventAnnouncementRead,
+	EventCameraStopped, EventCameraResumed, EventScreenShareStopped, EventScreenShareResumed, EventExtraDisplayDetected, EventExtraDisplayRemoved}
 
 // ViolationEventTypes are counted on the proctor dashboard.
-var ViolationEventTypes = []string{EventFocusLost, EventFullscreenExit, EventDeviceChanged}
+var ViolationEventTypes = []string{EventFocusLost, EventFullscreenExit, EventDeviceChanged, EventCameraStopped, EventScreenShareStopped, EventExtraDisplayDetected}

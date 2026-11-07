@@ -118,10 +118,14 @@ type AttemptView struct {
 	SectionMode     string          `json:"section_mode"` // shared | sequential
 	SecurityProfile string          `json:"security_profile"`
 	Settings        json.RawMessage `json:"settings"`
-	StartedAt       time.Time       `json:"started_at"`
-	DeadlineAt      time.Time       `json:"deadline_at"`
-	ServerTime      time.Time       `json:"server_time"`
-	Sections        []SectionView   `json:"sections"`
+	// RequireCamera/RequireScreen: the exam client must keep the camera / whole screen shared
+	// (DOCS/PLAN/19-LIHAT-LAYAR-KAMERA.md §4).
+	RequireCamera bool          `json:"require_camera"`
+	RequireScreen bool          `json:"require_screen"`
+	StartedAt     time.Time     `json:"started_at"`
+	DeadlineAt    time.Time     `json:"deadline_at"`
+	ServerTime    time.Time     `json:"server_time"`
+	Sections      []SectionView `json:"sections"`
 	// Media maps every data-media-id in the delivered items to a signed link.
 	Media map[string]modelMedia.Ref `json:"media"`
 	// MediaPlays counts the plays recorded per audio clip (data-media-id); ExtraPlays is
@@ -194,6 +198,15 @@ type MonitorRow struct {
 	LastViolationAt *time.Time     `json:"last_violation_at"`
 	LockedAt        *time.Time     `json:"locked_at"` // last LOCKED event
 	SubmittedAt     *time.Time     `json:"submitted_at"`
+	// Media is the latest camera/screen/display state, set when the session requires sharing.
+	Media *MediaState `json:"media"`
+}
+
+// MediaState is a participant's sharing state from the latest *_STOPPED/*_RESUMED events.
+type MediaState struct {
+	CameraOff    bool `json:"camera_off"`
+	ScreenOff    bool `json:"screen_off"`
+	ExtraDisplay bool `json:"extra_display"`
 }
 
 // MonitorView selects the participants of GET /sessions/:id/monitor/list.
@@ -218,10 +231,13 @@ const (
 	ViolationFocusLost      = "focus_lost"
 	ViolationFullscreenExit = "fullscreen_exit"
 	ViolationDeviceChanged  = "device_changed"
+	ViolationCameraStopped  = "camera_stopped"
+	ViolationScreenStopped  = "screen_stopped"
+	ViolationExtraDisplay   = "extra_display"
 )
 
 // ViolationTypes lists the valid violation_type filters.
-var ViolationTypes = []string{ViolationFocusLost, ViolationFullscreenExit, ViolationDeviceChanged}
+var ViolationTypes = []string{ViolationFocusLost, ViolationFullscreenExit, ViolationDeviceChanged, ViolationCameraStopped, ViolationScreenStopped, ViolationExtraDisplay}
 
 // MaxWatch is how many participants one proctor may watch at once.
 const MaxWatch = 25
@@ -251,4 +267,8 @@ type MonitorDTO struct {
 	ServerTime time.Time      `json:"server_time"`
 	Counts     map[string]int `json:"counts"` // total, not_started, in_progress, locked, submitted (incl. graded), idle, violations
 	Rows       []MonitorRow   `json:"rows"`
+	// RequireCamera/RequireScreen: the session's sharing requirements; proctors may open a
+	// live view of a running attempt when either is set.
+	RequireCamera bool `json:"require_camera"`
+	RequireScreen bool `json:"require_screen"`
 }

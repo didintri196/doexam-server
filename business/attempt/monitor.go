@@ -126,16 +126,25 @@ func (s *AttemptService) monitorSession(ctx context.Context, p modelAuth.Princip
 }
 
 func monitorDTO(sess SessionInfo, now time.Time, counts map[string]int, rows []MonitorAttempt) modelAttempt.MonitorDTO {
-	out := modelAttempt.MonitorDTO{SessionID: sess.ID, Status: sess.Status, ServerTime: now, Counts: counts, Rows: make([]modelAttempt.MonitorRow, 0, len(rows))}
+	out := modelAttempt.MonitorDTO{SessionID: sess.ID, Status: sess.Status, ServerTime: now, Counts: counts, Rows: make([]modelAttempt.MonitorRow, 0, len(rows)),
+		RequireCamera: sess.RequireCamera, RequireScreen: sess.RequireScreen}
+	sharing := sess.RequireCamera || sess.RequireScreen
 	for _, r := range rows {
+		var media *modelAttempt.MediaState
+		if sharing && r.AttemptID != nil {
+			media = &modelAttempt.MediaState{CameraOff: r.CameraOff, ScreenOff: r.ScreenOff, ExtraDisplay: r.ExtraDisplayOn}
+		}
 		out.Rows = append(out.Rows, modelAttempt.MonitorRow{
+			Media:  media,
 			UserID: r.UserID, Username: r.Username, FullName: r.FullName, Seat: r.Seat, Attendance: r.Attendance,
 			AttemptID: r.AttemptID, Status: r.Status, Answered: r.Answered, ItemCount: r.ItemCount,
-			DeadlineAt: r.DeadlineAt, LastSeenAt: r.LastSeenAt, Violations: r.FocusLost + r.FullscreenExit + r.DeviceChanged,
+			DeadlineAt: r.DeadlineAt, LastSeenAt: r.LastSeenAt,
+			Violations:  r.FocusLost + r.FullscreenExit + r.DeviceChanged + r.CameraStopped + r.ScreenStopped + r.ExtraDisplay,
 			DeviceBound: r.DeviceID != nil, FinalScore: r.FinalScore, Idle: r.Idle,
 			ViolationCounts: map[string]int{
 				modelAttempt.ViolationFocusLost: r.FocusLost, modelAttempt.ViolationFullscreenExit: r.FullscreenExit,
-				modelAttempt.ViolationDeviceChanged: r.DeviceChanged,
+				modelAttempt.ViolationDeviceChanged: r.DeviceChanged, modelAttempt.ViolationCameraStopped: r.CameraStopped,
+				modelAttempt.ViolationScreenStopped: r.ScreenStopped, modelAttempt.ViolationExtraDisplay: r.ExtraDisplay,
 			},
 			LastViolationAt: r.LastViolationAt, LockedAt: r.LockedAt, SubmittedAt: r.SubmittedAt,
 		})

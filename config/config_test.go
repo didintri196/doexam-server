@@ -8,7 +8,7 @@ import (
 
 func TestValidateMetrics(t *testing.T) {
 	base := func() DoExamConfig {
-		return DoExamConfig{Environment: "production", DatabaseURL: "postgres://x", ContentCacheMB: 64, SessionTTL: time.Hour,
+		return DoExamConfig{Environment: "production", DatabaseURL: "postgres://x", ContentCacheMB: 64, SessionTTL: time.Hour, ICEServers: []byte("[]"),
 			MetricsAddr: "127.0.0.1:9464", OTELMetricsExporter: "none"}
 	}
 	tests := []struct {
@@ -28,6 +28,10 @@ func TestValidateMetrics(t *testing.T) {
 		{"unknown exporter", func(c *DoExamConfig) { c.OTELMetricsExporter = "prometheus" }, "OTEL_METRICS_EXPORTER"},
 		{"tls cert without key", func(c *DoExamConfig) { c.TLSCertFile = "server.crt" }, "TLS_KEY_FILE"},
 		{"tls key without cert", func(c *DoExamConfig) { c.TLSKeyFile = "server.key" }, "TLS_CERT_FILE"},
+		{"ice servers not an array", func(c *DoExamConfig) { c.ICEServers = []byte(`{"urls":"stun:x"}`) }, "ICE_SERVERS"},
+		{"ice servers", func(c *DoExamConfig) {
+			c.ICEServers = []byte(`[{"urls":["turn:t:3478"],"username":"u","credential":"p"}]`)
+		}, ""},
 		{"tls pair", func(c *DoExamConfig) { c.TLSCertFile, c.TLSKeyFile = "server.crt", "server.key" }, ""},
 	}
 	for _, tt := range tests {

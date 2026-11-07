@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -26,6 +27,10 @@ type DoExamConfig struct {
 	TLSCertFile string
 	TLSKeyFile  string
 	TLSDir      string
+
+	// ICEServers is the WebRTC iceServers JSON array given to both peers of a live view
+	// (STUN/TURN for participants outside the LAN). "[]" = LAN only.
+	ICEServers json.RawMessage
 
 	// Database
 	DatabaseURL string
@@ -75,6 +80,7 @@ func Load() *Config {
 			TLSCertFile:         os.Getenv("TLS_CERT_FILE"),
 			TLSKeyFile:          os.Getenv("TLS_KEY_FILE"),
 			TLSDir:              getEnv("TLS_DIR", "./data/tls"),
+			ICEServers:          json.RawMessage(getEnv("ICE_SERVERS", "[]")),
 			DatabaseURL:         getEnv("DATABASE_URL", defaultDatabaseURL),
 			SessionTTL:          getDuration("AUTH_SESSION_TTL", 12*time.Hour),
 			AuthCacheTTL:        getOptionalDuration("AUTH_CACHE_TTL", 30*time.Second),
@@ -103,6 +109,10 @@ func (c *DoExamConfig) Validate() error {
 	}
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
 		return fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
+	}
+	var ice []map[string]any
+	if err := json.Unmarshal(c.ICEServers, &ice); err != nil {
+		return fmt.Errorf(`ICE_SERVERS must be a JSON array, e.g. [{"urls":"stun:stun.example.org:3478"}]`)
 	}
 	if c.ContentCacheMB <= 0 {
 		return fmt.Errorf("CONTENT_CACHE_MB must be a positive number of megabytes")

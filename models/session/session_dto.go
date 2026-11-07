@@ -34,6 +34,8 @@ type SessionInput struct {
 	TokenRequired        *bool             `json:"token_required"`
 	TokenRotationMinutes *int              `json:"token_rotation_minutes"`
 	IsMakeup             *bool             `json:"is_makeup"`
+	RequireCamera        *bool             `json:"require_camera"`
+	RequireScreen        *bool             `json:"require_screen"`
 }
 
 // StatusInput is the body of POST /api/v1/sessions/:id/status.
@@ -107,6 +109,8 @@ type SessionDTO struct {
 	TokenRotationMinutes int              `json:"token_rotation_minutes"`
 	Status               Status           `json:"status"`
 	IsMakeup             bool             `json:"is_makeup"`
+	RequireCamera        bool             `json:"require_camera"`
+	RequireScreen        bool             `json:"require_screen"`
 	ParticipantCount     int64            `json:"participant_count"`
 	Attendance           map[string]int64 `json:"attendance"`
 	Proctors             []PersonDTO      `json:"proctors"`
@@ -228,6 +232,8 @@ type MySessionDTO struct {
 	EndsAt           time.Time `json:"ends_at"`
 	Status           Status    `json:"status"`
 	TokenRequired    bool      `json:"token_required"`
+	RequireCamera    bool      `json:"require_camera"`
+	RequireScreen    bool      `json:"require_screen"`
 	TotalMinutes     *int      `json:"total_minutes"`
 	ExtraTimeMinutes int       `json:"extra_time_minutes"`
 	Seat             *string   `json:"seat"`

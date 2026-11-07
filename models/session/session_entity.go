@@ -41,9 +41,13 @@ type SessionEntity struct {
 	TokenRotationMinutes int    `gorm:"not null"`
 	Status               Status `gorm:"not null"`
 	IsMakeup             bool
-	CreatedBy            *string `gorm:"type:uuid"`
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	// RequireCamera/RequireScreen: participants must share their camera / whole screen
+	// before starting; proctors may then watch them live (DOCS/PLAN/19-LIHAT-LAYAR-KAMERA.md).
+	RequireCamera bool
+	RequireScreen bool
+	CreatedBy     *string `gorm:"type:uuid"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func (SessionEntity) TableName() string { return "exam_sessions" }

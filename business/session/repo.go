@@ -98,7 +98,7 @@ func (r *SessionRepo) CreateSession(ctx context.Context, s *modelSession.Session
 
 func (r *SessionRepo) UpdateSession(ctx context.Context, s *modelSession.SessionEntity) error {
 	err := dbpg.Conn(ctx, r.db).Model(s).Select("exam_id", "name", "room", "starts_at", "ends_at", "late_entry_minutes",
-		"token_required", "token_secret", "token_rotation_minutes", "status", "is_makeup").Updates(s).Error
+		"token_required", "token_secret", "token_rotation_minutes", "status", "is_makeup", "require_camera", "require_screen").Updates(s).Error
 	return wrap(err, "update session")
 }
 
@@ -325,7 +325,7 @@ func (r *SessionRepo) MySessions(ctx context.Context, userID string, since time.
 	out := []modelSession.MySessionDTO{}
 	err := dbpg.Conn(ctx, r.db).Table("exam_session_participants sp").
 		Select(`es.id AS session_id, es.exam_id, e.title AS exam_title, es.name, es.room, es.starts_at, es.ends_at, es.status,
-			es.token_required, `+totalMinutesSQL+` AS total_minutes, sp.extra_time_minutes, sp.seat`).
+			es.token_required, es.require_camera, es.require_screen, `+totalMinutesSQL+` AS total_minutes, sp.extra_time_minutes, sp.seat`).
 		Joins("JOIN exam_sessions es ON es.id = sp.session_id").
 		Joins("JOIN exams e ON e.id = es.exam_id").
 		Where("sp.user_id = ? AND es.ends_at > ? AND es.status <> 'cancelled'", userID, since).
