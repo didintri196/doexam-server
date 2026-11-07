@@ -106,6 +106,11 @@ func TestEntryPagesAndClientRoutes(t *testing.T) {
 				t.Fatalf("%s %s = %q", tt.target, h, r.header.Get(h))
 			}
 		}
+		// live view (plan 19) needs the exam client to open the camera and share the screen
+		pp := r.header.Get("Permissions-Policy")
+		if !strings.Contains(pp, "camera=(self)") || !strings.Contains(pp, "display-capture=(self)") {
+			t.Fatalf("%s Permissions-Policy %q blocks camera/screen", tt.target, pp)
+		}
 	}
 	// the panel never gets the exam client's worker policy
 	if strings.Contains(get(t, app, "/app/").header.Get("Content-Security-Policy"), "worker-src") {
