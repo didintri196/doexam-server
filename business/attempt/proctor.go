@@ -27,12 +27,15 @@ func (s *AttemptService) Monitor(ctx context.Context, p modelAuth.Principal, ses
 		if err != nil {
 			return err
 		}
-		running, err := s.storer.RunningAttempts(ctx, sessionID)
+		// Only attempts that tick may change are locked and ticked: locking every running
+		// attempt made all participants' syncs wait for each poll (DOCS/PLAN/14). For the
+		// others tick would be a no-op, and the dashboard below reads without locks.
+		overdue, err := s.storer.OverdueAttempts(ctx, sessionID, s.now().UTC().Add(-syncGrace))
 		if err != nil {
 			return err
 		}
-		for i := range running {
-			if err := s.tick(ctx, &running[i], client); err != nil {
+		for i := range overdue {
+			if err := s.tick(ctx, &overdue[i], client); err != nil {
 				return err
 			}
 		}

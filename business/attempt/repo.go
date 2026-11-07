@@ -464,6 +464,24 @@ func (r *AttemptRepo) RunningAttempts(ctx context.Context, sessionID string) ([]
 	return out, wrap(err, "running attempts")
 }
 
+func (r *AttemptRepo) OverdueAttempts(ctx context.Context, sessionID string, cutoff time.Time) ([]modelAttempt.AttemptEntity, error) {
+	out := []modelAttempt.AttemptEntity{}
+	// a superset of what tick acts on (it re-checks under the lock): any section with a
+	// passed deadline counts, whatever the section mode
+	err := dbpg.Conn(ctx, r.db).Raw(`
+		SELECT a.* FROM attempts a
+		WHERE a.session_id = @session AND a.status IN @running
+		  AND (a.deadline_at < @cutoff OR EXISTS (
+		        SELECT 1 FROM attempt_sections s
+		        WHERE s.attempt_id = a.id AND s.started_at IS NOT NULL AND s.closed_at IS NULL
+		          AND s.deadline_at IS NOT NULL AND s.deadline_at < @cutoff))
+		FOR UPDATE OF a SKIP LOCKED`, map[string]any{
+		"session": sessionID, "cutoff": cutoff,
+		"running": []modelAttempt.Status{modelAttempt.StatusInProgress, modelAttempt.StatusLocked},
+	}).Scan(&out).Error
+	return out, wrap(err, "overdue attempts")
+}
+
 func (r *AttemptRepo) Monitor(ctx context.Context, sessionID string) ([]MonitorAttempt, error) {
 	out := []MonitorAttempt{}
 	err := dbpg.Conn(ctx, r.db).Raw(`
