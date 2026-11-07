@@ -154,9 +154,9 @@ func (s *AttemptService) loadAndStore(ctx context.Context, tenantID string, ids 
 	return out, nil
 }
 
-// WarmExam loads every item version the exam can deliver (hand-picked items and whole
-// random pools) into the cache in the background, so participants starting together
-// read memory instead of the database. It returns at once; failures are only logged.
+// WarmExam loads the exam's plan (sections and selection specs) and every item version
+// it can deliver (hand-picked items and whole random pools) into the cache in the
+// background, so participants starting together read memory instead of the database. It returns at once; failures are only logged.
 // Call it after the caller's transaction (it opens its own).
 func (s *AttemptService) WarmExam(ctx context.Context, tenantID, examID string) {
 	if s.content == nil {
@@ -173,6 +173,13 @@ func (s *AttemptService) WarmExam(ctx context.Context, tenantID, examID string) 
 
 		var n int
 		err := s.tx.WithTenant(ctx, tenantID, func(ctx context.Context) error {
+			exam, err := s.storer.FindExam(ctx, examID)
+			if err != nil {
+				return err
+			}
+			if _, err := s.plan(ctx, tenantID, exam); err != nil {
+				return err
+			}
 			ids, err := s.storer.ExamVersionIDs(ctx, examID)
 			if err != nil {
 				return err
