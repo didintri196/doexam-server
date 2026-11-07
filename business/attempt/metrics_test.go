@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 	"time"
+	"unsafe"
 
 	modelAttempt "doexam/models/attempt"
 	modelAudit "doexam/models/audit"
@@ -138,5 +139,19 @@ func TestRejectReasonBounded(t *testing.T) {
 	}
 	if got := eventType("SOMETHING_NEW"); got != "other" {
 		t.Errorf("eventType = %q, want other", got)
+	}
+}
+
+// Fiber hands out params that point into a request buffer reused by the next request;
+// presence must not keep that memory as its map key (seen in a 500-participant load test
+// as thousands of phantom "stale" attempts).
+func TestPresenceCopiesID(t *testing.T) {
+	p := &presence{seen: map[string]time.Time{}}
+	const id = "0192a000-0000-7000-8000-000000000001"
+	buf := []byte(id)
+	p.touch(unsafe.String(&buf[0], len(buf)), time.Now())
+	copy(buf, "0192a000-0000-7000-8000-000000000002") // the next request reuses the buffer
+	if _, ok := p.seen[id]; !ok {
+		t.Fatalf("attempt %s lost after its request buffer was reused: %v", id, p.seen)
 	}
 }

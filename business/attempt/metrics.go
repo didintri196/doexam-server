@@ -56,7 +56,7 @@ func newAttemptMetrics(now func() time.Time) *attemptMetrics {
 		metric.WithExplicitBucketBoundaries(0, 1, 2, 5, 10, 25, 50, 100, 200))
 	am.lag, errs[5] = m.Float64Histogram("doexam.attempt.sync.client_lag", metric.WithUnit("s"),
 		metric.WithDescription("Time from an event being recorded on the client to the server accepting it."),
-		metric.WithExplicitBucketBoundaries(0.5, 1, 2, 5, 15, 30, 60, 120, 300, 600, 1800))
+		metric.WithExplicitBucketBoundaries(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 30, 60, 120, 300, 600, 1800))
 	am.violations, errs[6] = m.Int64Counter("doexam.attempt.violations", metric.WithUnit("{event}"),
 		metric.WithDescription("Accepted violation events (focus lost, fullscreen exit, device changed)."))
 	am.timedOut, errs[7] = m.Int64Counter("doexam.attempt.sections.timed_out", metric.WithUnit("{section}"),
@@ -187,7 +187,8 @@ type presence struct {
 
 func (p *presence) touch(id string, at time.Time) {
 	p.mu.Lock()
-	p.seen[id] = at
+	// the id may point into a reused request buffer (Fiber params): keep a copy as the key
+	p.seen[strings.Clone(id)] = at
 	p.mu.Unlock()
 }
 

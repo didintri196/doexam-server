@@ -16,7 +16,7 @@ curl -s localhost:9464/metrics | grep ^doexam_
 
 Di dalam container, `127.0.0.1` hanya terjangkau dari container itu sendiri. Untuk di-scrape dari container Prometheus, pakai `METRICS_ADDR=0.0.0.0:9464` + `METRICS_TOKEN`, dan jangan publish port 9464 ke internet.
 
-Contoh scrape Prometheus:
+Stack Prometheus + Grafana siap pakai ada di `docker-compose.yml` (service `prometheus`, `grafana`), konfigurasinya di `monitoring/`; lihat [MONITORING.md](MONITORING.md). Contoh scrape untuk Prometheus milik sendiri:
 
 ```yaml
 scrape_configs:
@@ -128,6 +128,8 @@ Tabel yang dipantau: `attempts`, `attempt_items`, `attempt_sections`, `attempt_e
 | `process_cpu_seconds_total`, `process_resident_memory_bytes`, `process_open_fds`, `process_start_time_seconds` | Proses |
 
 ## Contoh alert (PromQL)
+
+Versi lengkap yang dimuat Prometheus bawaan: `monitoring/prometheus/alerts.yml`.
 
 ```yaml
 groups:
