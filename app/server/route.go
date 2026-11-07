@@ -281,7 +281,6 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	v1.Post("/announcements", requireAuth, sessionHandler.Broadcast)
 	v1.Get("/my/announcements", requireAuth, sessionHandler.MyAnnouncements)
 	v1.Post("/my/announcements/:aid/read", requireAuth, sessionHandler.ReadAnnouncement)
-	sessions.Get("/:id/monitor", attemptHandler.Monitor) // legacy: every participant; replaced by list/watch
 	sessions.Get("/:id/monitor/list", attemptHandler.MonitorList)
 	sessions.Post("/:id/monitor/watch", attemptHandler.MonitorWatch)
 

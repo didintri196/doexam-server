@@ -50,7 +50,6 @@ APP_ENV=staging GOMAXPROCS=2 REDIS_URL=redis://localhost:6379/0 ./bin/doexam
 | `RAMP_SECONDS` | `60` | Rentang waktu kedatangan peserta |
 | `MINUTES` | `5` | Lama mengerjakan setelah gelombang login |
 | `PROCTORS` | `2` | Jumlah pengawas yang memantau |
-| `MONITOR` | `views` | `views`: tampilan monitor berhalaman (10 kartu, bergantian per poll); `legacy`: monitor lama (semua peserta) sebagai pembanding |
 | `USER_PREFIX` | `ujibeban` | Awalan username peserta uji |
 | `PARTICIPANT_PASSWORD` | `UjiBeban-2026!` | Password akun peserta uji (khusus server uji) |
 
@@ -64,7 +63,7 @@ Membebani monitor pengawas pada sesi yang **sudah ada**, tanpa peserta: `PROCTOR
 k6 run -e BASE_URL=http://localhost:8080 -e ADMIN_TOKEN=... -e SESSION_ID=... -e PROCTORS=50 -e DURATION=60s loadtest/monitor.js
 ```
 
-`MONITOR=legacy` memakai monitor lama sebagai pembanding. Ambang: p95 < 200 ms.
+Ambang: p95 < 200 ms.
 
 ## Memeriksa jawaban tidak hilang
 
