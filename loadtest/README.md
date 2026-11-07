@@ -1,6 +1,6 @@
 # Uji beban
 
-Skrip [k6](https://k6.io) untuk target roadmap "500 peserta serentak di server 2 vCPU". Hasil dan cara membacanya ada di [DOCS/PLAN/14-UJI-BEBAN.md](../../../DOCS/PLAN/14-UJI-BEBAN.md).
+Skrip [k6](https://k6.io) untuk target roadmap "500 peserta serentak di server 2 vCPU". Hasil, grafik, bukti, dan opsi spesifikasi infra ada di [`../LOADTEST.md`](../LOADTEST.md); catatan perencanaannya di `DOCS/PLAN/14-UJI-BEBAN.md` (repo utama).
 
 **Hanya untuk server development/staging.** Skrip membuat akun peserta uji dan sesi ujian sungguhan di database.
 
@@ -72,3 +72,13 @@ WHERE a.session_id = '<id sesi dari log k6>';
 ```bash
 USER_PREFIX=ujibeban VUS=500 k6 run loadtest/cleanup.js
 ```
+
+## Grafik
+
+`charts.py` membuat grafik di `LOADTEST.md` dari ringkasan k6 (`--summary-export`), log request API (JSON, `APP_ENV=staging`), dan rekaman CPU/memori. Palet dan aturannya mengikuti panduan dataviz: palet tervalidasi untuk buta warna, satu sumbu per grafik, dan setiap grafik disertai tabel di dokumen.
+
+```bash
+python3 loadtest/charts.py loadtest/img runs.json
+```
+
+`runs.json` berisi daftar run: `name`, `label`, `participants`, `summary`, `resources`, `apilog`, `start`/`end` (HH:MM:SS), dan `after_fix`. Contohnya ada di docstring skrip.
