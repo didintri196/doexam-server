@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,14 +22,15 @@ func NewSessionHandler(sessionSvc *session.SessionService) *SessionHandler {
 	return &SessionHandler{sessionSvc: sessionSvc}
 }
 
-// List handles GET /api/v1/sessions?exam_id&status&from&to&page&per_page (from/to: RFC 3339).
+// List handles GET /api/v1/sessions?exam_id&status&from&to&q&page&per_page (from/to: RFC 3339).
 func (h *SessionHandler) List(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
 	page, perPage, err := parsePage(c)
 	if err != nil {
 		return handleError(c, logger, "invalid pagination", err)
 	}
-	f := modelSession.ListFilter{Page: page, PerPage: perPage, ExamID: c.Query("exam_id"), Status: modelSession.Status(c.Query("status"))}
+	f := modelSession.ListFilter{Page: page, PerPage: perPage, ExamID: c.Query("exam_id"),
+		Status: modelSession.Status(c.Query("status")), Query: strings.TrimSpace(c.Query("q"))}
 	v := errr.Validation{}
 	f.From, f.To = queryTime(c, "from", v), queryTime(c, "to", v)
 	if err := v.Err(); err != nil {
