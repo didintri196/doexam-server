@@ -33,6 +33,9 @@ func (h *SessionHandler) List(c *fiber.Ctx) error {
 		Status: modelSession.Status(c.Query("status")), Query: strings.TrimSpace(c.Query("q"))}
 	v := errr.Validation{}
 	f.From, f.To = queryTime(c, "from", v), queryTime(c, "to", v)
+	sort := c.Query("sort", "desc")
+	v.Check(sort == "desc" || sort == "asc", "sort", "must be asc or desc")
+	f.Asc = sort == "asc"
 	if err := v.Err(); err != nil {
 		return handleError(c, logger, "invalid filter", err)
 	}

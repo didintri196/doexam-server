@@ -142,7 +142,7 @@ Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate
 | PATCH/DELETE | `/api/v1/section-items/:id` 🔒 | Ubah poin & `lock_options` / keluarkan soal |
 | POST | `/api/v1/sections/:id/rules` 🔒 | Aturan blueprint `{bank_id, item_count, competency_id?, item_type?, difficulty?, tags_any?, points?}` |
 | PATCH/DELETE | `/api/v1/section-rules/:id` 🔒 | Ubah / hapus aturan |
-| GET/POST | `/api/v1/sessions` 🔒 | Daftar (`exam_id`, `status`, `from`, `to` RFC 3339, `q` = nama sesi/ruang/judul ujian) — manager: semua, proktor: yang ditugaskan / buat sesi `{exam_id, name, starts_at, ends_at, room?, late_entry_minutes?, token_required?, token_rotation_minutes?, is_makeup?}` `session.manage` |
+| GET/POST | `/api/v1/sessions` 🔒 | Daftar (`exam_id`, `status`, `from`, `to` RFC 3339, `q` = nama sesi/ruang/judul ujian, `sort` = `desc` (default, waktu mulai terbaru dulu) atau `asc`) — manager: semua, proktor: yang ditugaskan / buat sesi `{exam_id, name, starts_at, ends_at, room?, late_entry_minutes?, token_required?, token_rotation_minutes?, is_makeup?}` `session.manage` |
 | GET/PATCH/DELETE | `/api/v1/sessions/:id` 🔒 | Detail (ujian, proktor, grup, rekap kehadiran) / ubah / hapus (hanya `scheduled` tanpa attempt) |
 | POST | `/api/v1/sessions/:id/status` 🔒 | `{status: open\|paused\|closed\|cancelled}` — proktor boleh buka/jeda/tutup, batal hanya manager |
 | GET | `/api/v1/sessions/:id/token` 🔒 | Token ruang saat ini `{code, expires_at, rotation_minutes}` (manager & proktor sesi) |
