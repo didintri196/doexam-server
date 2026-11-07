@@ -48,3 +48,9 @@ type TxManager interface {
 type PasswordHasher interface {
 	Hash(ctx context.Context, pw string) (string, error)
 }
+
+// SessionForgetter drops cached logins of a user (implemented by the auth domain). Call
+// it after the transaction that revoked sessions or changed status or roles commits.
+type SessionForgetter interface {
+	ForgetUser(tenantID, userID string)
+}

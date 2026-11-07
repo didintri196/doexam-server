@@ -24,6 +24,9 @@ type DoExamConfig struct {
 
 	// Auth
 	SessionTTL time.Duration
+	// AuthCacheTTL is how long a resolved login token is trusted without the database
+	// (0 disables). Revocations apply at once on this node, on others within this time.
+	AuthCacheTTL time.Duration
 
 	// File storage (uploads); local directory for now
 	StorageDir string
@@ -49,6 +52,7 @@ func Load() *Config {
 			Environment:     getEnv("APP_ENV", "development"),
 			DatabaseURL:     getEnv("DATABASE_URL", defaultDatabaseURL),
 			SessionTTL:      getDuration("AUTH_SESSION_TTL", 12*time.Hour),
+			AuthCacheTTL:    getOptionalDuration("AUTH_CACHE_TTL", 30*time.Second),
 			StorageDir:      getEnv("STORAGE_DIR", "./data/storage"),
 			MediaSigningKey: os.Getenv("MEDIA_SIGNING_KEY"),
 			RedisURL:        os.Getenv("REDIS_URL"),
@@ -71,6 +75,9 @@ func (c *DoExamConfig) Validate() error {
 	}
 	if c.ContentCacheMB <= 0 {
 		return fmt.Errorf("CONTENT_CACHE_MB must be a positive number of megabytes")
+	}
+	if c.AuthCacheTTL < 0 || c.AuthCacheTTL > 5*time.Minute {
+		return fmt.Errorf("AUTH_CACHE_TTL must be a duration from 0 (off) to 5m (e.g. 30s)")
 	}
 	if c.SessionTTL <= 0 {
 		return fmt.Errorf("AUTH_SESSION_TTL must be a positive duration (e.g. 12h)")
@@ -96,6 +103,20 @@ func getInt(key string, fallback int) int {
 		return 0
 	}
 	return n
+}
+
+// getOptionalDuration is getDuration where 0 is a valid value ("off"). Invalid values
+// become -1 and fail Validate.
+func getOptionalDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return -1
+	}
+	return d
 }
 
 // getDuration parses a Go duration ("12h", "90m"). Invalid values become 0 and fail Validate.

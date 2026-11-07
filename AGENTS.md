@@ -272,6 +272,7 @@ Untuk 4xx, pesan dari `errr.WithMessage` (mis. "setup already completed", "inval
 - File upload: batasi ukuran & jumlah baris, deteksi format dari isi file (bukan hanya ekstensi), simpan lewat port `FileStore` dengan key `<tenant_id>/<jenis>/<uuid>.<ext>`, bukan nama file dari user.
 - Kegagalan login selalu dijawab sama ("invalid credentials"), termasuk untuk tenant/username yang tidak ada (`VerifyDummy` menyamakan waktu respons).
 - Token sesi login berformat `<tenant_id>.<acak>`, dikirim di header `Authorization: Bearer`. Validasi lewat `AuthService.Authenticate` (middleware `RequireAuth`), jangan diparse sendiri.
+- `Authenticate` meng-cache `Principal` selama `AUTH_CACHE_TTL` (DOCS/PLAN/10 §2.8). **Setiap** kode yang mencabut sesi atau mengubah status, peran, atau izin user **wajib** memanggil `ForgetUser(tenantID, userID)` (port `SessionForgetter`) **setelah** transaksinya commit. Bila tidak, akses yang dicabut tetap berlaku sampai TTL habis.
 - Log SQL GORM memakai `ParameterizedQueries`, jadi nilai parameter tidak pernah tercetak. Jangan matikan.
 - Jangan log: password, token, secret, `answer_key`, isi jawaban peserta, data pribadi (NIK/NISN, tanggal lahir). Log ID-nya saja.
 - Setiap perubahan soal, kunci, nilai, atau konfigurasi ujian ditulis ke `audit_logs` di transaksi yang sama dengan perubahannya (konstanta aksi di `models/audit`, buat entri dengan `modelAudit.New(modelAudit.Entry{...})`; isi `Before`/`After` dengan DTO, bukan entity). Login, logout, dan ganti password juga diaudit.

@@ -178,7 +178,7 @@ func newFixture(t *testing.T) *fixture {
 		sessions: map[string]*modelAuth.AuthSessionEntity{},
 	}
 	f := &fixture{store: store, tx: &fakeTx{}, hasher: &fakeHasher{}, now: time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)}
-	f.svc = NewAuthService(store, f.tx, f.hasher, 12*time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	f.svc = NewAuthService(store, f.tx, f.hasher, 12*time.Hour, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	f.svc.now = func() time.Time { return f.now }
 	return f
 }
