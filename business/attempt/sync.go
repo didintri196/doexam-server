@@ -54,21 +54,26 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 		if snap.SecurityProfile == modelExam.SecurityStandard && a.ActiveDeviceID != nil && *a.ActiveDeviceID != deviceID {
 			return errDeviceLocked
 		}
-		sections, err := s.storer.ListAttemptSections(ctx, a.ID)
-		if err != nil {
-			return err
-		}
-		items, err := s.items(ctx, a)
-		if err != nil {
-			return err
-		}
+		// Items and sections are only needed to check answers, flags and views. A heartbeat
+		// (empty batch) or other events skip loading them: every open exam client sends one
+		// every 15 seconds.
+		var items []ItemRow
 		byID := map[string]*ItemRow{}
-		for i := range items {
-			byID[items[i].ID] = &items[i]
-		}
 		open := map[string]bool{}
-		for _, sec := range sections {
-			open[sec.ID] = sectionState(sec) == stateActive
+		if slices.ContainsFunc(in.Events, func(ev modelAttempt.ClientEvent) bool { return isItemEvent(ev.Type) }) {
+			sections, err := s.storer.ListAttemptSections(ctx, a.ID)
+			if err != nil {
+				return err
+			}
+			if items, err = s.items(ctx, a); err != nil {
+				return err
+			}
+			for i := range items {
+				byID[items[i].ID] = &items[i]
+			}
+			for _, sec := range sections {
+				open[sec.ID] = sectionState(sec) == stateActive
+			}
 		}
 
 		events := slices.Clone(in.Events)
@@ -126,6 +131,12 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 	return out, nil
 }
 
+// isItemEvent reports whether an event targets one attempt item (and so needs the
+// attempt's items and sections to be checked).
+func isItemEvent(t string) bool {
+	return t == modelAttempt.EventResponseSaved || t == modelAttempt.EventFlagSet || t == modelAttempt.EventItemViewed
+}
+
 // checkEvent returns a rejection reason ("" = ok) and the item the event targets.
 func (s *AttemptService) checkEvent(ev modelAttempt.ClientEvent, a modelAttempt.AttemptEntity, snap snapshot, byID map[string]*ItemRow,
 	open map[string]bool, items []ItemRow, now time.Time) (string, *ItemRow) {
@@ -161,8 +172,7 @@ func (s *AttemptService) checkEvent(ev modelAttempt.ClientEvent, a modelAttempt.
 		// count is what the proctor needs to see.
 		return "", nil
 	}
-	itemEvent := ev.Type == modelAttempt.EventResponseSaved || ev.Type == modelAttempt.EventFlagSet || ev.Type == modelAttempt.EventItemViewed
-	if !itemEvent {
+	if !isItemEvent(ev.Type) {
 		return "", nil
 	}
 	item := byID[strings.ToLower(ev.AttemptItemID)]
