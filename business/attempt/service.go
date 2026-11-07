@@ -225,16 +225,13 @@ func (s *AttemptService) create(ctx context.Context, p modelAuth.Principal, sess
 	if int(n) >= exam.MaxAttempts {
 		return modelAttempt.AttemptEntity{}, errr.WithMessage(errr.ErrConflict, "no attempts left for this exam")
 	}
-	sections, err := s.storer.ListSections(ctx, exam.ID)
+	pl, err := s.plan(ctx, p.TenantID, exam)
 	if err != nil {
 		return modelAttempt.AttemptEntity{}, err
 	}
-	specs, err := s.specs(ctx, exam.ID, sections)
-	if err != nil {
-		return modelAttempt.AttemptEntity{}, err
-	}
+	sections := pl.Sections
 	seed := s.seed()
-	plan, err := buildPlan(specs, seed, exam.ShuffleItems, exam.ShuffleOptions)
+	plan, err := buildPlan(pl.Specs, seed, exam.ShuffleItems, exam.ShuffleOptions)
 	if err != nil {
 		return modelAttempt.AttemptEntity{}, err
 	}

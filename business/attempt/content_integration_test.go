@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -112,6 +113,39 @@ func TestIntegrationItemsMatchJoinQuery(t *testing.T) {
 				for _, r := range rows {
 					if !slices.Contains(ids, r.ItemVersionID) {
 						t.Fatalf("exam %s: version %s used by attempt %s is not in ExamVersionIDs", a.ExamID, r.ItemVersionID, a.ID)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		// the cached exam plan draws exactly what the database plan draws
+		for _, a := range attempts {
+			err := tx.WithTenant(context.Background(), a.TenantID, func(ctx context.Context) error {
+				exam, err := repo.FindExam(ctx, a.ExamID)
+				if err != nil {
+					return err
+				}
+				direct, err := svc.loadPlan(ctx, exam.ID)
+				if err != nil {
+					return err
+				}
+				for pass := range 2 {
+					got, err := svc.plan(ctx, a.TenantID, exam)
+					if err != nil {
+						return err
+					}
+					if !reflect.DeepEqual(got.Sections, direct.Sections) {
+						t.Fatalf("%s pass %d exam %s: sections differ from the database", name, pass, exam.ID)
+					}
+					for seed := range int64(5) {
+						x, errX := buildPlan(direct.Specs, seed, true, true)
+						y, errY := buildPlan(got.Specs, seed, true, true)
+						if (errX == nil) != (errY == nil) || !reflect.DeepEqual(x, y) {
+							t.Fatalf("%s pass %d exam %s seed %d: plan differs from the database", name, pass, exam.ID, seed)
+						}
 					}
 				}
 				return nil

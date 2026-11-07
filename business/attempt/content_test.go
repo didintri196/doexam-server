@@ -11,17 +11,19 @@ import (
 	"time"
 
 	modelAttempt "doexam/models/attempt"
+	modelExam "doexam/models/exam"
 	"doexam/pkg/bytecache"
 )
 
 // contentStore fakes the content queries; other storer methods panic.
 type contentStore struct {
 	AttemptStorer
-	mu       sync.Mutex
-	items    []modelAttempt.AttemptItemEntity
-	versions map[string]ItemContent
-	examIDs  []string
-	queried  [][]string // ids asked of ItemContents, per call
+	mu        sync.Mutex
+	items     []modelAttempt.AttemptItemEntity
+	versions  map[string]ItemContent
+	examIDs   []string
+	queried   [][]string // ids asked of ItemContents, per call
+	planReads int        // exam structure reads
 }
 
 func (f *contentStore) ListAttemptItems(context.Context, string) ([]modelAttempt.AttemptItemEntity, error) {
@@ -43,6 +45,27 @@ func (f *contentStore) ItemContents(_ context.Context, ids []string) ([]ItemCont
 
 func (f *contentStore) ExamVersionIDs(context.Context, string) ([]string, error) {
 	return f.examIDs, nil
+}
+
+// the exam structure, for warm-ups (counted in planReads)
+func (f *contentStore) FindExam(context.Context, string) (modelExam.ExamEntity, error) {
+	at := time.Date(2026, 11, 7, 8, 0, 0, 0, time.UTC)
+	return modelExam.ExamEntity{ID: "e1", Status: modelExam.StatusPublished, PublishedAt: &at}, nil
+}
+
+func (f *contentStore) ListSections(context.Context, string) ([]modelExam.SectionEntity, error) {
+	f.mu.Lock()
+	f.planReads++
+	f.mu.Unlock()
+	return []modelExam.SectionEntity{{ID: "s1", SortOrder: 1, Selection: modelExam.SelectionFixed}}, nil
+}
+
+func (f *contentStore) Candidates(context.Context, string) ([]CandidateRow, error) {
+	return []CandidateRow{{SectionID: "s1", ItemID: "i1", VersionID: "v1", Type: "mcq", Content: []byte(`{}`)}}, nil
+}
+
+func (f *contentStore) ListRules(context.Context, string) ([]modelExam.RuleEntity, error) {
+	return nil, nil
 }
 
 func (f *contentStore) calls() int {
@@ -175,6 +198,14 @@ func TestWarmExamFillsCache(t *testing.T) {
 	}
 	if store.calls() != 1 {
 		t.Fatalf("database read %d times after warm-up, want 1", store.calls())
+	}
+	// the exam plan was warmed too: starting reads no structure from the database
+	exam, _ := store.FindExam(context.Background(), "e1")
+	if _, err := svc.plan(context.Background(), "t1", exam); err != nil {
+		t.Fatal(err)
+	}
+	if store.planReads != 1 {
+		t.Fatalf("exam structure read %d times, want 1 (by the warm-up)", store.planReads)
 	}
 }
 
