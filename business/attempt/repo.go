@@ -190,16 +190,40 @@ func (r *AttemptRepo) UpdateAttemptSection(ctx context.Context, s *modelAttempt.
 	return wrap(err, "update attempt section")
 }
 
-func (r *AttemptRepo) ListItems(ctx context.Context, attemptID string) ([]ItemRow, error) {
-	out := []ItemRow{}
-	err := dbpg.Conn(ctx, r.db).Table("attempt_items ai").
-		Select(`ai.*, iv.type, iv.content, iv.answer_key, iv.scoring, iv.explanation,
+func (r *AttemptRepo) ListAttemptItems(ctx context.Context, attemptID string) ([]modelAttempt.AttemptItemEntity, error) {
+	out := []modelAttempt.AttemptItemEntity{}
+	err := dbpg.Conn(ctx, r.db).Where("attempt_id = ?", attemptID).Order("position").Find(&out).Error
+	return out, wrap(err, "list attempt items")
+}
+
+func (r *AttemptRepo) ItemContents(ctx context.Context, versionIDs []string) ([]ItemContent, error) {
+	out := []ItemContent{}
+	if len(versionIDs) == 0 {
+		return out, nil
+	}
+	err := dbpg.Conn(ctx, r.db).Table("item_versions iv").
+		Select(`iv.id AS version_id, iv.type, iv.content, iv.answer_key, iv.scoring, iv.explanation,
 			st.id AS stimulus_id, st.title AS stimulus_title, sv.content AS stimulus_content`).
-		Joins("JOIN item_versions iv ON iv.id = ai.item_version_id").
 		Joins("LEFT JOIN stimulus_versions sv ON sv.id = iv.stimulus_version_id").
 		Joins("LEFT JOIN stimuli st ON st.id = sv.stimulus_id").
-		Where("ai.attempt_id = ?", attemptID).Order("ai.position").Scan(&out).Error
-	return out, wrap(err, "list attempt items")
+		Where("iv.id IN ?", versionIDs).Scan(&out).Error
+	return out, wrap(err, "item contents")
+}
+
+func (r *AttemptRepo) ExamVersionIDs(ctx context.Context, examID string) ([]string, error) {
+	out := []string{}
+	err := dbpg.Conn(ctx, r.db).Raw(`
+		SELECT esi.item_version_id::text
+		FROM exam_section_items esi
+		JOIN exam_sections s ON s.id = esi.section_id
+		WHERE s.exam_id = @exam
+		UNION
+		SELECT p.item_version_id::text
+		FROM exam_rule_pool p
+		JOIN exam_section_rules ru ON ru.id = p.rule_id
+		JOIN exam_sections s ON s.id = ru.section_id
+		WHERE s.exam_id = @exam`, map[string]any{"exam": examID}).Scan(&out).Error
+	return out, wrap(err, "exam version ids")
 }
 
 func (r *AttemptRepo) SaveResponse(ctx context.Context, itemID string, response []byte, seq int, at time.Time) error {

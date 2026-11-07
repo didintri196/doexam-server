@@ -59,7 +59,7 @@ func (s *AttemptService) view(ctx context.Context, a modelAttempt.AttemptEntity)
 	running := a.Status == modelAttempt.StatusInProgress || a.Status == modelAttempt.StatusLocked
 	var items []ItemRow
 	if running {
-		if items, err = s.storer.ListItems(ctx, a.ID); err != nil {
+		if items, err = s.items(ctx, a); err != nil {
 			return modelAttempt.AttemptView{}, err
 		}
 	}

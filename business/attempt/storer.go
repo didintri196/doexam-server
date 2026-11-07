@@ -96,7 +96,12 @@ type AttemptStorer interface {
 	UpdateAttempt(ctx context.Context, a *modelAttempt.AttemptEntity) error
 	ListAttemptSections(ctx context.Context, attemptID string) ([]modelAttempt.AttemptSectionEntity, error)
 	UpdateAttemptSection(ctx context.Context, s *modelAttempt.AttemptSectionEntity) error
-	ListItems(ctx context.Context, attemptID string) ([]ItemRow, error)
+	// ListAttemptItems returns the attempt's items (without content) in position order.
+	ListAttemptItems(ctx context.Context, attemptID string) ([]modelAttempt.AttemptItemEntity, error)
+	// ItemContents returns item versions with their stimulus; ids not found are left out.
+	ItemContents(ctx context.Context, versionIDs []string) ([]ItemContent, error)
+	// ExamVersionIDs returns every item version the exam can deliver (pinned items and rule pools).
+	ExamVersionIDs(ctx context.Context, examID string) ([]string, error)
 	SaveResponse(ctx context.Context, itemID string, response []byte, seq int, at time.Time) error
 	SetFlag(ctx context.Context, itemID string, flagged bool) error
 	AddVisit(ctx context.Context, itemID string, spentMs int) error
@@ -140,6 +145,13 @@ type MediaLinker interface {
 type Announcements interface {
 	Cursor(ctx context.Context, sessionID string) (string, error)
 	MarkRead(ctx context.Context, announcementID, userID string, at time.Time) error
+}
+
+// ContentCache stores encoded ItemContent by key (pkg/bytecache: in-memory LRU or Redis).
+// It is only a cache: a miss or an error falls back to the database.
+type ContentCache interface {
+	GetMulti(ctx context.Context, keys []string) (map[string][]byte, error)
+	SetMulti(ctx context.Context, items map[string][]byte) error
 }
 
 // TxManager runs fn inside a transaction scoped to tenantID.

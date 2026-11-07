@@ -59,7 +59,7 @@ type SessionService struct {
 	hasher   PasswordHasher // card passwords
 	storer   SessionStorer
 	tx       TxManager
-	attempts AttemptFinalizer
+	attempts Attempts
 	links    LinkSigner // card signature image
 	board    *AnnouncementBoard
 	now      func() time.Time
@@ -68,7 +68,7 @@ type SessionService struct {
 }
 
 // NewSessionService returns a concrete SessionService.
-func NewSessionService(storer SessionStorer, tx TxManager, attempts AttemptFinalizer, hasher PasswordHasher, links LinkSigner, board *AnnouncementBoard, logger *slog.Logger) *SessionService {
+func NewSessionService(storer SessionStorer, tx TxManager, attempts Attempts, hasher PasswordHasher, links LinkSigner, board *AnnouncementBoard, logger *slog.Logger) *SessionService {
 	return &SessionService{storer: storer, tx: tx, attempts: attempts, hasher: hasher, links: links, board: board, now: time.Now, tracer: otel.Tracer("doexam.service.session"), logger: logger}
 }
 
@@ -377,6 +377,10 @@ func (s *SessionService) SetStatus(ctx context.Context, p modelAuth.Principal, i
 	})
 	if err != nil {
 		return modelSession.SessionDTO{}, fail(span, err)
+	}
+	if in.Status == modelSession.StatusOpen {
+		// participants start right after opening: have their questions in the cache by then
+		s.attempts.WarmExam(ctx, p.TenantID, out.Exam.ID)
 	}
 	return out, nil
 }
