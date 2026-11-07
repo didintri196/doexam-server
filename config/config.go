@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -30,6 +31,11 @@ type DoExamConfig struct {
 	// once and kept in storage (system/media-signing.key).
 	MediaSigningKey string
 
+	// Item content cache: Redis when RedisURL is set (shared by every node), otherwise
+	// an in-memory LRU of ContentCacheMB megabytes.
+	RedisURL       string
+	ContentCacheMB int
+
 	// OTEL (tracing disabled when OTELEndpoint is empty)
 	OTELEndpoint string
 	OTELService  string
@@ -45,6 +51,8 @@ func Load() *Config {
 			SessionTTL:      getDuration("AUTH_SESSION_TTL", 12*time.Hour),
 			StorageDir:      getEnv("STORAGE_DIR", "./data/storage"),
 			MediaSigningKey: os.Getenv("MEDIA_SIGNING_KEY"),
+			RedisURL:        os.Getenv("REDIS_URL"),
+			ContentCacheMB:  getInt("CONTENT_CACHE_MB", 64),
 			OTELEndpoint:    os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 			OTELService:     getEnv("OTEL_SERVICE_NAME", "doexam-api"),
 		},
@@ -61,6 +69,9 @@ func (c *DoExamConfig) Validate() error {
 	if c.Environment == "production" && c.DatabaseURL == defaultDatabaseURL {
 		return fmt.Errorf("DATABASE_URL must be set in production")
 	}
+	if c.ContentCacheMB <= 0 {
+		return fmt.Errorf("CONTENT_CACHE_MB must be a positive number of megabytes")
+	}
 	if c.SessionTTL <= 0 {
 		return fmt.Errorf("AUTH_SESSION_TTL must be a positive duration (e.g. 12h)")
 	}
@@ -72,6 +83,19 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getInt parses an integer. Invalid values become 0 and fail Validate.
+func getInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // getDuration parses a Go duration ("12h", "90m"). Invalid values become 0 and fail Validate.

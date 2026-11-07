@@ -256,6 +256,8 @@ Target `db/migrations/*` membaca `DATABASE_URL` dari `.env` (atau environment).
 | `DATABASE_URL` | `postgres://doexam:secret@localhost:5433/doexam?sslmode=disable` | DSN PostgreSQL (wajib di-set di production) |
 | `STORAGE_DIR` | `./data/storage` | Folder file upload (impor, logo, media soal). Di Docker: volume `storage` |
 | `MEDIA_SIGNING_KEY` | _(dibuat otomatis)_ | Kunci HMAC link media (hex/base64, ≥16 byte). Kosong = dibuat sekali lalu disimpan di `STORAGE_DIR/system/media-signing.key`. Wajib sama di semua instance bila server lebih dari satu |
+| `REDIS_URL` | _(kosong)_ | Redis untuk cache konten soal (`redis://host:6379/0`, `rediss://` untuk TLS), dipakai bersama antar-instance. Kosong = cache in-memory. Redis mati = baca dari PostgreSQL, ujian tetap jalan |
+| `CONTENT_CACHE_MB` | `64` | Batas cache konten soal in-memory (MB), dipakai bila `REDIS_URL` kosong |
 | `AUTH_SESSION_TTL` | `12h` | Masa berlaku sesi login (format durasi Go: `12h`, `90m`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(kosong)_ | Endpoint OTLP gRPC; kosong = tracing mati |
 | `OTEL_SERVICE_NAME` | `doexam-api` | Nama service di tracing |

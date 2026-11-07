@@ -126,7 +126,7 @@ func (s *AttemptService) recompute(ctx context.Context, a *modelAttempt.AttemptE
 	if err != nil {
 		return err
 	}
-	items, err := s.storer.ListItems(ctx, a.ID)
+	items, err := s.items(ctx, *a)
 	if err != nil {
 		return err
 	}
@@ -293,7 +293,7 @@ func (s *AttemptService) result(ctx context.Context, a modelAttempt.AttemptEntit
 		return out, nil
 	}
 	out.RawScore, out.MaxScore, out.FinalScore, out.Passed = a.RawScore, a.MaxScore, a.FinalScore, a.Passed
-	items, err := s.storer.ListItems(ctx, a.ID)
+	items, err := s.items(ctx, a)
 	if err != nil {
 		return out, err
 	}

@@ -19,6 +19,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # Cache konten soal (opsional; tanpa Redis server memakai cache in-memory).
+  # Konten soal tidak pernah berubah, jadi tidak perlu persistensi: cukup LRU di memori.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   api:
     build:
       context: .
@@ -31,10 +44,13 @@ services:
       DATABASE_URL: postgres://doexam:secret@postgres:5432/doexam?sslmode=disable
       OTEL_SERVICE_NAME: doexam-api
       STORAGE_DIR: /app/data/storage
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - storage:/app/data
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:

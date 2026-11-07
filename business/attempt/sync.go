@@ -58,7 +58,7 @@ func (s *AttemptService) Sync(ctx context.Context, p modelAuth.Principal, id str
 		if err != nil {
 			return err
 		}
-		items, err := s.storer.ListItems(ctx, a.ID)
+		items, err := s.items(ctx, a)
 		if err != nil {
 			return err
 		}

@@ -134,7 +134,14 @@ func (f *fakeStore) CreateAuditLog(_ context.Context, l *modelAudit.AuditLogEnti
 	return nil
 }
 
-type fakeFinalizer struct{ closed []string }
+type fakeFinalizer struct {
+	closed []string
+	warmed []string // tenant/exam
+}
+
+func (f *fakeFinalizer) WarmExam(_ context.Context, tenantID, examID string) {
+	f.warmed = append(f.warmed, tenantID+"/"+examID)
+}
 
 func (f *fakeFinalizer) FinalizeSessionAttempts(_ context.Context, sessionID, _ string) (int, error) {
 	f.closed = append(f.closed, sessionID)
@@ -222,6 +229,11 @@ func TestStatusTransitions(t *testing.T) {
 			if closed != (tt.wantErr == nil && tt.to == modelSession.StatusClosed) {
 				t.Fatalf("running attempts finalized = %v", closed)
 			}
+			// opening preloads the exam's questions (only once the change is saved)
+			warmed := svc.attempts.(*fakeFinalizer).warmed
+			if want := tt.wantErr == nil && tt.to == modelSession.StatusOpen; want != (len(warmed) == 1) {
+				t.Fatalf("exam warmed = %v", warmed)
+			}
 		})
 	}
 }
@@ -236,6 +248,9 @@ func TestOpenRefusals(t *testing.T) {
 	svc.now = func() time.Time { return now.Add(4 * time.Hour) }
 	if _, err := svc.SetStatus(context.Background(), managerP, sessionID, modelSession.StatusInput{Status: modelSession.StatusOpen}, modelAudit.Client{}); !errors.Is(err, errr.ErrConflict) {
 		t.Fatalf("window ended: err = %v", err)
+	}
+	if w := svc.attempts.(*fakeFinalizer).warmed; len(w) != 0 {
+		t.Fatalf("a refused opening must not warm the exam: %v", w)
 	}
 }
 

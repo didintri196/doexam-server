@@ -18,6 +18,7 @@ Rujukan pola: Hexagonal Architecture (Ports & Adapters) ala [muchlist/templatere
 | Tracing | OpenTelemetry lewat `pkg/otelutil` |
 | Spreadsheet | `github.com/xuri/excelize/v2` lewat `pkg/spreadsheet` (jangan import excelize langsung di business) |
 | Sanitasi HTML | `github.com/microcosm-cc/bluemonday` lewat `pkg/richtext` (jangan buat policy sendiri) |
+| Cache (opsional) | In-memory bawaan; Redis (`github.com/redis/go-redis/v9`) bila `REDIS_URL` di-set, lewat `pkg/bytecache` (jangan import go-redis di business) |
 | Test | `testing` standar (table-driven), `fiber.App.Test` untuk handler |
 
 Menambah dependency baru = harus ada alasan kuat dan disebutkan di PR. Utamakan standard library.
@@ -41,7 +42,7 @@ apps/server/
 ├── config/                  # Config loader (env) — hanya dipakai main.go
 ├── pkg/                     # Utilitas reusable, TIDAK tahu domain bisnis
 │   ├── db-pg/  errr/  mlog/  middleware/  otelutil/  password/  securetoken/
-│   ├── spreadsheet/  storage/  ttlcache/  richtext/  psychometrics/
+│   ├── spreadsheet/  storage/  ttlcache/  bytecache/  richtext/  psychometrics/
 └── migrations/              # 000001_xxx.up.sql / .down.sql
 ```
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"doexam/business/user"
 	"doexam/config"
 	modelImport "doexam/models/importer"
+	"doexam/pkg/bytecache"
 	dbpg "doexam/pkg/db-pg"
 	"doexam/pkg/mediaurl"
 	"doexam/pkg/middleware"
@@ -74,6 +76,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	}
 	// Links live ≥12 h (a long exam day) and change once an hour, so caches can reuse them.
 	mediaSigner := mediaurl.NewSigner(mediaKey, 12*time.Hour, time.Hour)
+	contentCache, closeCache := newContentCache(cfg, logger)
 
 	// ── Services (Core) ────────────────────────────────────────
 	healthSvc := health.NewHealthService(dbPinger, version, logger)
@@ -87,7 +90,7 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	itemBankSvc := itembank.NewItemBankService(itemBankRepo, txManager, mediaSvc, logger)
 	examSvc := exam.NewExamService(examRepo, txManager, logger)
 	announcementBoard := session.NewAnnouncementBoard(sessionRepo)
-	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, announcementBoard, logger)
+	attemptSvc := attempt.NewAttemptService(attemptRepo, txManager, mediaSvc, announcementBoard, contentCache, logger)
 	sessionSvc := session.NewSessionService(sessionRepo, txManager, attemptSvc, importHasher, mediaSigner, announcementBoard, logger)
 	reportSvc := report.NewReportService(reportRepo, txManager, logger)
 
@@ -298,7 +301,36 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	exams.Post("/:id/analysis", reportHandler.Recompute)
 	attempts.Get("/:id/report", reportHandler.AttemptReport)
 
-	return importSvc.Shutdown, nil
+	shutdown := func(ctx context.Context) error {
+		err := errors.Join(importSvc.Shutdown(ctx), attemptSvc.Shutdown(ctx))
+		return errors.Join(err, closeCache())
+	}
+	return shutdown, nil
+}
+
+// contentRedisTTL bounds how long item content stays in Redis; versions never change,
+// so this only keeps old exams from occupying memory (Redis also evicts by LRU).
+const contentRedisTTL = 24 * time.Hour
+
+// newContentCache returns the item content cache: Redis when REDIS_URL is set, an
+// in-memory LRU otherwise. An unreachable Redis is only a warning: every read falls
+// back to the database until it answers.
+func newContentCache(cfg config.DoExamConfig, logger *slog.Logger) (attempt.ContentCache, func() error) {
+	if cfg.RedisURL == "" {
+		logger.InfoContext(context.Background(), "item content cache: in memory", slog.Int("max_mb", cfg.ContentCacheMB))
+		return bytecache.NewMemory(cfg.ContentCacheMB << 20), func() error { return nil }
+	}
+	client, err := bytecache.OpenRedis(context.Background(), cfg.RedisURL)
+	if client == nil {
+		logger.ErrorContext(context.Background(), "item content cache: invalid REDIS_URL, using memory", slog.String("error", err.Error()))
+		return bytecache.NewMemory(cfg.ContentCacheMB << 20), func() error { return nil }
+	}
+	if err != nil {
+		logger.WarnContext(context.Background(), "item content cache: redis not reachable yet", slog.String("error", err.Error()))
+	} else {
+		logger.InfoContext(context.Background(), "item content cache: redis")
+	}
+	return bytecache.NewRedis(client, "doexam:", contentRedisTTL), client.Close
 }
 
 // loginLimiterKey is the rate-limit key for login: client IP + tenant + username.

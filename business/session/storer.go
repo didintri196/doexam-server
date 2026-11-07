@@ -103,3 +103,15 @@ type LinkSigner interface {
 type AttemptFinalizer interface {
 	FinalizeSessionAttempts(ctx context.Context, sessionID, actorID string) (int, error)
 }
+
+// ExamWarmer preloads what an exam delivers (item content) before participants start,
+// in the background (implemented by the attempt domain). Call it after the transaction.
+type ExamWarmer interface {
+	WarmExam(ctx context.Context, tenantID, examID string)
+}
+
+// Attempts is what the session domain needs from the attempt domain.
+type Attempts interface {
+	AttemptFinalizer
+	ExamWarmer
+}

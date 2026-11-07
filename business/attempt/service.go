@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
 
 	modelAttempt "doexam/models/attempt"
 	modelAudit "doexam/models/audit"
@@ -78,15 +80,19 @@ type AttemptService struct {
 	tx     TxManager
 	media  MediaLinker   // nil: no media links (tests)
 	board  Announcements // nil: no announcements (tests)
-	now    func() time.Time
-	seed   func() int64
-	tracer trace.Tracer
-	logger *slog.Logger
+	// content caches item versions (nil: always read the database)
+	content ContentCache
+	flight  singleflight.Group
+	wg      sync.WaitGroup // background warm-ups
+	now     func() time.Time
+	seed    func() int64
+	tracer  trace.Tracer
+	logger  *slog.Logger
 }
 
 // NewAttemptService returns a concrete AttemptService.
-func NewAttemptService(storer AttemptStorer, tx TxManager, media MediaLinker, board Announcements, logger *slog.Logger) *AttemptService {
-	return &AttemptService{storer: storer, tx: tx, media: media, board: board, now: time.Now, seed: randomSeed, tracer: otel.Tracer("doexam.service.attempt"), logger: logger}
+func NewAttemptService(storer AttemptStorer, tx TxManager, media MediaLinker, board Announcements, content ContentCache, logger *slog.Logger) *AttemptService {
+	return &AttemptService{storer: storer, tx: tx, media: media, board: board, content: content, now: time.Now, seed: randomSeed, tracer: otel.Tracer("doexam.service.attempt"), logger: logger}
 }
 
 // Start begins an attempt for the caller in an open session, or resumes the running one.
