@@ -729,7 +729,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"/api/v1/sessions/:id/monitor\"}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"/api/v1/sessions/:id/monitor/(list|watch)\"}[1m])))",
           "legendFormat": "monitor proktor",
           "refId": "D"
         }

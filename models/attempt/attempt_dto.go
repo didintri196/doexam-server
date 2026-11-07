@@ -244,11 +244,11 @@ type WatchInput struct {
 	UserIDs []string `json:"user_ids"`
 }
 
-// MonitorDTO is GET /api/v1/sessions/:id/monitor.
+// MonitorDTO is GET /api/v1/sessions/:id/monitor/list (one page) and POST .../monitor/watch.
 type MonitorDTO struct {
 	SessionID  string         `json:"session_id"`
 	Status     string         `json:"status"`
 	ServerTime time.Time      `json:"server_time"`
-	Counts     map[string]int `json:"counts"` // legacy: not_started, in_progress, locked, submitted, graded; list/watch: total, not_started, in_progress, locked, submitted (incl. graded), idle, violations
+	Counts     map[string]int `json:"counts"` // total, not_started, in_progress, locked, submitted (incl. graded), idle, violations
 	Rows       []MonitorRow   `json:"rows"`
 }

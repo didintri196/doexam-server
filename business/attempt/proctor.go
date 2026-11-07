@@ -16,57 +16,6 @@ import (
 	"doexam/pkg/errr"
 )
 
-// Monitor is the proctor dashboard of a session: every participant with the state of their
-// latest attempt. Expired attempts are finalized first so the board never shows stale timers.
-func (s *AttemptService) Monitor(ctx context.Context, p modelAuth.Principal, sessionID string, client modelAudit.Client) (modelAttempt.MonitorDTO, error) {
-	ctx, span := s.tracer.Start(ctx, "AttemptService.Monitor", trace.WithAttributes(attribute.String("session.id", sessionID)))
-	defer span.End()
-
-	var out modelAttempt.MonitorDTO
-	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
-		sess, err := s.proctorSession(ctx, p, sessionID)
-		if err != nil {
-			return err
-		}
-		// Only attempts that tick may change are locked and ticked: locking every running
-		// attempt made all participants' syncs wait for each poll (DOCS/PLAN/14). For the
-		// others tick would be a no-op, and the dashboard below reads without locks.
-		overdue, err := s.storer.OverdueAttempts(ctx, sessionID, s.now().UTC().Add(-syncGrace))
-		if err != nil {
-			return err
-		}
-		for i := range overdue {
-			if err := s.tick(ctx, &overdue[i], client); err != nil {
-				return err
-			}
-		}
-		rows, err := s.storer.Monitor(ctx, sessionID)
-		if err != nil {
-			return err
-		}
-		out = modelAttempt.MonitorDTO{SessionID: sessionID, Status: sess.Status, ServerTime: s.now().UTC(),
-			Counts: map[string]int{"not_started": 0}, Rows: make([]modelAttempt.MonitorRow, 0, len(rows))}
-		for _, r := range rows {
-			if r.Status == nil {
-				out.Counts["not_started"]++
-			} else {
-				out.Counts[string(*r.Status)]++
-			}
-			out.Rows = append(out.Rows, modelAttempt.MonitorRow{
-				UserID: r.UserID, Username: r.Username, FullName: r.FullName, Seat: r.Seat, Attendance: r.Attendance,
-				AttemptID: r.AttemptID, Status: r.Status, Answered: r.Answered, ItemCount: r.ItemCount,
-				DeadlineAt: r.DeadlineAt, LastSeenAt: r.LastSeenAt, Violations: r.Violations,
-				DeviceBound: r.DeviceID != nil, FinalScore: r.FinalScore,
-			})
-		}
-		return nil
-	})
-	if err != nil {
-		return modelAttempt.MonitorDTO{}, fail(span, err)
-	}
-	return out, nil
-}
-
 // Extend adds minutes to a running attempt (and its current timed section), never past the
 // session end; extend the session first when more time is needed.
 func (s *AttemptService) Extend(ctx context.Context, p modelAuth.Principal, id string, in modelAttempt.ExtendInput, client modelAudit.Client) (modelAttempt.AttemptView, error) {
