@@ -129,7 +129,12 @@ type AttemptStorer interface {
 	AttemptsWithVersion(ctx context.Context, examID, versionID string) ([]modelAttempt.AttemptEntity, error)
 	CreateAuditLog(ctx context.Context, log *modelAudit.AuditLogEntity) error
 
+	// RunningAttempts locks every running attempt of a session (closing the session).
 	RunningAttempts(ctx context.Context, sessionID string) ([]modelAttempt.AttemptEntity, error)
+	// OverdueAttempts locks the running attempts of a session that tick may have to change:
+	// the attempt deadline, or a started and open section's deadline, is before cutoff.
+	// Rows locked by another transaction are skipped (that request ticks them itself).
+	OverdueAttempts(ctx context.Context, sessionID string, cutoff time.Time) ([]modelAttempt.AttemptEntity, error)
 	Monitor(ctx context.Context, sessionID string) ([]MonitorAttempt, error)
 	MyAttempts(ctx context.Context, userID string) ([]modelAttempt.MyAttemptDTO, error)
 }
