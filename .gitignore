@@ -24,3 +24,4 @@ tmp/
 
 # Uploaded files (STORAGE_DIR)
 data/
+monitoring/.metrics-token

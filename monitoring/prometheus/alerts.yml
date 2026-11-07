@@ -1,0 +1,73 @@
+# Aturan alert DoExam (DOCS/PLAN/16-MONITORING-METRIK.md §5). Nama metrik: METRICS.md.
+groups:
+  - name: doexam
+    rules:
+      - alert: DoExamAPIDown
+        expr: up{job="doexam"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations: { summary: "Prometheus tidak bisa scrape API {{ $labels.instance }}" }
+
+      - alert: DoExamDependencyDown
+        expr: doexam_dependency_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations: { summary: "{{ $labels.dependency }} tidak menjawab dari {{ $labels.instance }}" }
+
+      - alert: DoExamParticipant5xx
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_route=~"/api/v1/auth/login|/api/v1/attempts.*",http_response_status_code=~"5.."}[5m]))
+            / sum(rate(http_server_request_duration_seconds_count{http_route=~"/api/v1/auth/login|/api/v1/attempts.*"}[5m])) > 0.01
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "Lebih dari 1% request peserta gagal 5xx" }
+
+      - alert: DoExamEventsRejected
+        # after_deadline dan forward_only adalah penolakan yang wajar (aturan ujian)
+        expr: sum(increase(doexam_attempt_events_rejected_total{reason!~"after_deadline|forward_only"}[5m])) > 0
+        labels: { severity: critical }
+        annotations: { summary: "Ada event peserta ditolak: cek alasan di panel Ujian Live" }
+
+      - alert: DoExamSyncSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route="/api/v1/attempts/:id/events"}[5m]))) > 0.3
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "p95 sync peserta di atas 300 ms" }
+
+      - alert: DoExamDBPoolWaiting
+        expr: rate(go_sql_wait_count_total[1m]) > 0
+        for: 3m
+        labels: { severity: warning }
+        annotations: { summary: "Request menunggu koneksi database (pool penuh)" }
+
+      - alert: DoExamParticipantsStale
+        expr: sum(doexam_attempts_stale) / clamp_min(sum(doexam_attempts_connected) + sum(doexam_attempts_stale), 1) > 0.1
+        for: 2m
+        labels: { severity: warning }
+        annotations: { summary: "Lebih dari 10% peserta tidak sync > 60 detik (biasanya jaringan lab)" }
+
+      - alert: DoExamLoginFailuresSpike
+        expr: |
+          sum(rate(doexam_auth_logins_total{result=~"wrong_password|unknown_account"}[5m]))
+            > 5 * sum(rate(doexam_auth_logins_total{result=~"wrong_password|unknown_account"}[1h] offset 5m)) + 0.1
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Login gagal melonjak (brute force atau kartu peserta salah)" }
+
+      - alert: DoExamDiskLow
+        expr: doexam_storage_free_bytes / doexam_storage_size_bytes < 0.1
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Sisa disk storage di bawah 10%" }
+
+      - alert: DoExamMemoryHigh
+        expr: process_resident_memory_bytes{job="doexam"} > 1.5e9
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "RSS API di atas 1,5 GB" }
+
+      - alert: DoExamPanics
+        expr: increase(doexam_http_panics_total[5m]) > 0
+        labels: { severity: warning }
+        annotations: { summary: "Ada panic saat melayani request" }

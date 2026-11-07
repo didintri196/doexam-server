@@ -30,6 +30,16 @@ make run/api
 
 Server berjalan di `http://localhost:8080`.
 
+### Monitoring (Prometheus + Grafana)
+
+```bash
+openssl rand -hex 16 > monitoring/.metrics-token          # sekali
+docker compose up -d prometheus grafana
+METRICS_ADDR=0.0.0.0:9464 METRICS_TOKEN=$(cat monitoring/.metrics-token) make run/api
+```
+
+Grafana di `http://localhost:3000` (dashboard **DoExam API**), Prometheus di `http://localhost:9090`. Panduan dan hasil uji: [MONITORING.md](MONITORING.md). Katalog metrik: [METRICS.md](METRICS.md).
+
 ## Database & Migrasi
 
 Skema dikelola dengan [golang-migrate](https://github.com/golang-migrate/migrate) di `migrations/`. Rancangan awalnya ada di dokumen perencanaan proyek (`DOCS/PLAN/08-DATABASE-MVP.md`, di luar repo ini); file migrasi adalah sumber kebenarannya.

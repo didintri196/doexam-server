@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 5s      # rapat untuk uji beban; 15s cukup untuk produksi
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: doexam
+    authorization:
+      credentials_file: /run/secrets/metrics-token
+    static_configs:
+      # API di host (binary atau `go run`). Ganti dengan alamat node lain bila lebih dari satu.
+      - targets: ["host.docker.internal:9464"]
+        labels: { instance: api-1 }
