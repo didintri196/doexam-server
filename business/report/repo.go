@@ -42,13 +42,12 @@ func (r *ReportRepo) SessionBelongs(ctx context.Context, sessionID, examID strin
 	return ok, wrap(err, "session belongs")
 }
 
-func (r *ReportRepo) RecapRows(ctx context.Context, examID string, f modelReport.RecapFilter) ([]RecapAttempt, error) {
+// recapParticipants is every participant row of the exam's sessions matching f (one row per
+// participant × session), joined with users so both recap queries see the same people.
+func (r *ReportRepo) recapParticipants(ctx context.Context, examID string, f modelReport.RecapFilter) *gorm.DB {
 	q := dbpg.Conn(ctx, r.db).Table("exam_session_participants sp").
-		Select(`sp.user_id, u.username, u.full_name, u.external_id, es.name AS session_name, es.starts_at AS session_at,
-			a.id AS attempt_id, a.status, a.final_score, a.submitted_at`).
 		Joins("JOIN exam_sessions es ON es.id = sp.session_id AND es.status <> 'cancelled'").
 		Joins("JOIN users u ON u.id = sp.user_id").
-		Joins("LEFT JOIN attempts a ON a.session_id = sp.session_id AND a.user_id = sp.user_id AND a.status <> 'void'").
 		Where("es.exam_id = ?", examID)
 	if f.SessionID != "" {
 		q = q.Where("sp.session_id = ?", f.SessionID)
@@ -56,9 +55,54 @@ func (r *ReportRepo) RecapRows(ctx context.Context, examID string, f modelReport
 	if f.GroupID != "" {
 		q = q.Where("EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = ? AND gm.user_id = sp.user_id)", f.GroupID)
 	}
+	return q
+}
+
+func (r *ReportRepo) RecapRows(ctx context.Context, examID string, f modelReport.RecapFilter) ([]RecapAttempt, error) {
+	q := r.recapParticipants(ctx, examID, f).
+		Select(`sp.user_id, u.username, u.full_name, u.external_id, es.name AS session_name, es.starts_at AS session_at,
+			a.id AS attempt_id, a.status, a.final_score, a.submitted_at`).
+		Joins("LEFT JOIN attempts a ON a.session_id = sp.session_id AND a.user_id = sp.user_id AND a.status <> 'void'")
+	if f.PerPage > 0 {
+		// page over participants, not over participant × attempt rows: one user may sit
+		// several sessions and attempts, and is folded into one recap row
+		page := dbpg.Conn(ctx, r.db).Table("users pu").Select("pu.id").
+			Where("pu.id IN (?)", r.recapParticipants(ctx, examID, f).Select("sp.user_id")).
+			Order("pu.full_name, pu.id").Limit(f.PerPage).Offset((f.Page - 1) * f.PerPage)
+		q = q.Where("sp.user_id IN (?)", page)
+	}
 	out := []RecapAttempt{}
 	err := q.Order("u.full_name, u.id, es.starts_at, a.attempt_no").Scan(&out).Error
 	return out, wrap(err, "recap rows")
+}
+
+// RecapCounts mirrors buildRecap's status rules in SQL: no attempt → not started; running
+// without any score yet → in progress; any submitted (ungraded) attempt → pending grading;
+// otherwise graded.
+func (r *ReportRepo) RecapCounts(ctx context.Context, examID string, f modelReport.RecapFilter) (map[string]int, error) {
+	perUser := r.recapParticipants(ctx, examID, f).
+		Joins("LEFT JOIN attempts a ON a.session_id = sp.session_id AND a.user_id = sp.user_id AND a.status <> 'void'").
+		Select(`CASE
+			WHEN count(a.id) = 0 THEN ?
+			WHEN bool_or(a.status IN ('in_progress', 'locked'))
+			     AND NOT bool_or(a.status IN ('submitted', 'graded') AND a.final_score IS NOT NULL) THEN ?
+			WHEN bool_or(a.status = 'submitted') THEN ?
+			ELSE ? END AS status`,
+			modelReport.RecapNotStarted, modelReport.RecapInProgress, modelReport.RecapPendingGrading, modelReport.RecapGraded).
+		Group("sp.user_id")
+	var rows []struct {
+		Status string
+		N      int
+	}
+	err := dbpg.Conn(ctx, r.db).Table("(?) per_user", perUser).Select("status, count(*) AS n").Group("status").Scan(&rows).Error
+	if err != nil {
+		return nil, wrap(err, "recap counts")
+	}
+	out := map[string]int{}
+	for _, row := range rows {
+		out[row.Status] = row.N
+	}
+	return out, nil
 }
 
 func (r *ReportRepo) AnalysisData(ctx context.Context, examID, sessionID string) ([]AnalysisAttempt, []AnalysisItem, error) {

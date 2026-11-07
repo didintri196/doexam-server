@@ -68,14 +68,19 @@ func (h *GradingHandler) Grade(c *fiber.Ctx) error {
 	return SuccessResponse(c, fiber.StatusOK, "answer graded", dto)
 }
 
-// ListAdjustments handles GET /api/v1/exams/:id/adjustments.
+// ListAdjustments handles GET /api/v1/exams/:id/adjustments?page&per_page.
 func (h *GradingHandler) ListAdjustments(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
-	out, err := h.attemptSvc.ListAdjustments(c.UserContext(), principal(c), c.Params("id"))
+	page, perPage, err := parsePage(c)
+	if err != nil {
+		return handleError(c, logger, "invalid pagination", err)
+	}
+	out, total, err := h.attemptSvc.ListAdjustments(c.UserContext(), principal(c), c.Params("id"),
+		modelAttempt.AdjustmentFilter{Page: page, PerPage: perPage})
 	if err != nil {
 		return handleError(c, logger, "failed to list adjustments", err)
 	}
-	return SuccessResponse(c, fiber.StatusOK, "adjustments retrieved", out)
+	return PaginatedResponse(c, out, total, page, perPage)
 }
 
 // CreateAdjustment handles POST /api/v1/exams/:id/adjustments.

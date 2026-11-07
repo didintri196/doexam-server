@@ -144,15 +144,20 @@ func (r *ItemBankRepo) UserExists(ctx context.Context, id string) (bool, error) 
 
 // ---- members ----
 
-func (r *ItemBankRepo) ListMembers(ctx context.Context, bankID string) ([]modelBank.MemberDTO, error) {
-	out := []modelBank.MemberDTO{}
-	err := dbpg.Conn(ctx, r.db).Table("item_bank_members m").
-		Select("m.user_id, u.username, u.full_name, m.access").
+func (r *ItemBankRepo) ListMembers(ctx context.Context, bankID string, f modelBank.MemberFilter) ([]modelBank.MemberDTO, int64, error) {
+	q := dbpg.Conn(ctx, r.db).Table("item_bank_members m").
 		Joins("JOIN users u ON u.id = m.user_id AND u.deleted_at IS NULL").
-		Where("m.bank_id = ?", bankID).
-		Order("CASE m.access WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END, u.full_name").
+		Where("m.bank_id = ?", bankID)
+	var total int64
+	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, wrap(err, "count bank members")
+	}
+	out := []modelBank.MemberDTO{}
+	err := q.Session(&gorm.Session{}).Select("m.user_id, u.username, u.full_name, m.access").
+		Order("CASE m.access WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END, u.full_name, u.id").
+		Limit(f.PerPage).Offset((f.Page - 1) * f.PerPage).
 		Scan(&out).Error
-	return out, wrap(err, "list bank members")
+	return out, total, wrap(err, "list bank members")
 }
 
 func (r *ItemBankRepo) UpsertMember(ctx context.Context, m *modelBank.BankMemberEntity) error {

@@ -67,6 +67,12 @@ type GradingFilter struct {
 	Blind         bool   // hide who answered
 }
 
+// AdjustmentFilter pages GET /api/v1/exams/:id/adjustments.
+type AdjustmentFilter struct {
+	Page    int
+	PerPage int
+}
+
 // AdjustmentInput is the body of POST /api/v1/exams/:id/adjustments.
 type AdjustmentInput struct {
 	ItemVersionID string          `json:"item_version_id"`

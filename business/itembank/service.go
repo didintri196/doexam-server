@@ -252,24 +252,25 @@ func (s *ItemBankService) DeleteBank(ctx context.Context, p modelAuth.Principal,
 	return nil
 }
 
-// ListMembers returns who can access a bank (readers may see it).
-func (s *ItemBankService) ListMembers(ctx context.Context, p modelAuth.Principal, bankID string) ([]modelBank.MemberDTO, error) {
+// ListMembers returns one page of who can access a bank (readers may see it) and the total.
+func (s *ItemBankService) ListMembers(ctx context.Context, p modelAuth.Principal, bankID string, f modelBank.MemberFilter) ([]modelBank.MemberDTO, int64, error) {
 	ctx, span := s.tracer.Start(ctx, "ItemBankService.ListMembers", trace.WithAttributes(attribute.String("bank.id", bankID)))
 	defer span.End()
 
 	var out []modelBank.MemberDTO
+	var total int64
 	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
 		if _, _, err := s.bankAccess(ctx, p, bankID, levelRead); err != nil {
 			return err
 		}
 		var err error
-		out, err = s.storer.ListMembers(ctx, bankID)
+		out, total, err = s.storer.ListMembers(ctx, bankID, f)
 		return err
 	})
 	if err != nil {
-		return nil, fail(span, err)
+		return nil, 0, fail(span, err)
 	}
-	return out, nil
+	return out, total, nil
 }
 
 // SetMember grants or changes a user's access to a bank (owner). The last owner cannot be demoted.

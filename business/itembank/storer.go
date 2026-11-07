@@ -44,7 +44,8 @@ type ItemBankStorer interface {
 	CompetencyIDsByCode(ctx context.Context, subjectID string) (map[string]string, error)
 
 	// members
-	ListMembers(ctx context.Context, bankID string) ([]modelBank.MemberDTO, error)
+	// ListMembers returns one page of a bank's members (owners first) and the total.
+	ListMembers(ctx context.Context, bankID string, f modelBank.MemberFilter) ([]modelBank.MemberDTO, int64, error)
 	UpsertMember(ctx context.Context, m *modelBank.BankMemberEntity) error
 	RemoveMember(ctx context.Context, bankID, userID string) (bool, error)
 	CountOwners(ctx context.Context, bankID, excludeUserID string) (int64, error)

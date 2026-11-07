@@ -112,7 +112,12 @@ type ReportSection struct {
 type ReportStorer interface {
 	FindExam(ctx context.Context, id string) (modelExam.ExamEntity, error)
 	SessionBelongs(ctx context.Context, sessionID, examID string) (bool, error)
+	// RecapRows returns participant × attempt rows; with f.PerPage > 0 only those of one
+	// page of participants (paged in SQL, ordered by name).
 	RecapRows(ctx context.Context, examID string, f modelReport.RecapFilter) ([]RecapAttempt, error)
+	// RecapCounts counts every matching participant per recap status, ignoring the page.
+	// Its status rules must match buildRecap (checked by TestIntegrationRecapCountsMatchRows).
+	RecapCounts(ctx context.Context, examID string, f modelReport.RecapFilter) (map[string]int, error)
 	// AnalysisData returns each participant's first graded attempt and its items.
 	AnalysisData(ctx context.Context, examID, sessionID string) ([]AnalysisAttempt, []AnalysisItem, error)
 	SaveStats(ctx context.Context, tenantID, examID, sessionID string, st StoredStats) error

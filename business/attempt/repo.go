@@ -393,10 +393,16 @@ func (r *AttemptRepo) InsertManualGrade(ctx context.Context, g *modelAttempt.Man
 	return wrap(dbpg.Conn(ctx, r.db).Create(g).Error, "insert manual grade")
 }
 
-func (r *AttemptRepo) ListAdjustments(ctx context.Context, examID string) ([]modelAttempt.AdjustmentEntity, error) {
+func (r *AttemptRepo) ListAdjustments(ctx context.Context, examID string, f modelAttempt.AdjustmentFilter) ([]modelAttempt.AdjustmentEntity, int64, error) {
+	q := dbpg.Conn(ctx, r.db).Model(&modelAttempt.AdjustmentEntity{}).Where("exam_id = ?", examID)
+	var total int64
+	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, wrap(err, "count adjustments")
+	}
 	out := []modelAttempt.AdjustmentEntity{}
-	err := dbpg.Conn(ctx, r.db).Where("exam_id = ?", examID).Order("created_at DESC").Find(&out).Error
-	return out, wrap(err, "list adjustments")
+	err := q.Session(&gorm.Session{}).Order("created_at DESC, id DESC").
+		Limit(f.PerPage).Offset((f.Page - 1) * f.PerPage).Find(&out).Error
+	return out, total, wrap(err, "list adjustments")
 }
 
 func (r *AttemptRepo) FindAdjustment(ctx context.Context, id string) (modelAttempt.AdjustmentEntity, error) {

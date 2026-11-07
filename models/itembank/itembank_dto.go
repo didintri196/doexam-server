@@ -37,6 +37,12 @@ type BankUpdateInput struct {
 	Description *string `json:"description"`
 }
 
+// MemberFilter pages GET /api/v1/item-banks/:id/members.
+type MemberFilter struct {
+	Page    int
+	PerPage int
+}
+
 // MemberInput is the body of POST /api/v1/item-banks/:id/members (upsert).
 type MemberInput struct {
 	UserID string `json:"user_id"`

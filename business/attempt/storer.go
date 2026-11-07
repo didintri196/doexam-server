@@ -119,7 +119,8 @@ type AttemptStorer interface {
 	FindItem(ctx context.Context, attemptItemID string) (ItemRow, error)
 	GradeHistory(ctx context.Context, attemptItemID string) ([]modelAttempt.GradeHistoryRow, error)
 	InsertManualGrade(ctx context.Context, g *modelAttempt.ManualGradeEntity) error
-	ListAdjustments(ctx context.Context, examID string) ([]modelAttempt.AdjustmentEntity, error)
+	// ListAdjustments returns one page of an exam's adjustments, newest first, and the total.
+	ListAdjustments(ctx context.Context, examID string, f modelAttempt.AdjustmentFilter) ([]modelAttempt.AdjustmentEntity, int64, error)
 	FindAdjustment(ctx context.Context, id string) (modelAttempt.AdjustmentEntity, error)
 	CreateAdjustment(ctx context.Context, a *modelAttempt.AdjustmentEntity) error
 	RevokeAdjustment(ctx context.Context, id string, at time.Time) error

@@ -20,17 +20,19 @@ import (
 	"doexam/pkg/errr"
 )
 
-// ListAdjustments returns the regrade adjustments of an exam (active and revoked), newest first.
-func (s *AttemptService) ListAdjustments(ctx context.Context, p modelAuth.Principal, examID string) ([]modelAttempt.AdjustmentDTO, error) {
+// ListAdjustments returns one page of the regrade adjustments of an exam (active and
+// revoked), newest first, and how many there are.
+func (s *AttemptService) ListAdjustments(ctx context.Context, p modelAuth.Principal, examID string, f modelAttempt.AdjustmentFilter) ([]modelAttempt.AdjustmentDTO, int64, error) {
 	ctx, span := s.tracer.Start(ctx, "AttemptService.ListAdjustments", trace.WithAttributes(attribute.String("exam.id", examID)))
 	defer span.End()
 
 	var out []modelAttempt.AdjustmentDTO
+	var total int64
 	err := s.tx.WithTenant(ctx, p.TenantID, func(ctx context.Context) error {
 		if _, err := s.gradingExam(ctx, p, examID); err != nil {
 			return err
 		}
-		rows, err := s.storer.ListAdjustments(ctx, examID)
+		rows, n, err := s.storer.ListAdjustments(ctx, examID, f)
 		if err != nil {
 			return err
 		}
@@ -38,12 +40,13 @@ func (s *AttemptService) ListAdjustments(ctx context.Context, p modelAuth.Princi
 		for _, r := range rows {
 			out = append(out, toAdjustmentDTO(r, 0))
 		}
+		total = n
 		return nil
 	})
 	if err != nil {
-		return nil, fail(span, err)
+		return nil, 0, fail(span, err)
 	}
-	return out, nil
+	return out, total, nil
 }
 
 // CreateAdjustment annuls an item or corrects its key for one exam, then recomputes every
