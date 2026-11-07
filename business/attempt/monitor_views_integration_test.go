@@ -117,10 +117,11 @@ func TestIntegrationMonitorViews(t *testing.T) {
 
 		// counts
 		start := time.Now()
-		counts, err := repo.MonitorCounts(ctx, sess.ID, modelAttempt.MonitorFilter{}, idleBefore)
+		cres, err := repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: modelAttempt.ViewAll, Page: 1, PerPage: 10}, idleBefore)
 		if err != nil {
 			return err
 		}
+		counts := cres.Counts
 		t.Logf("counts: %v in %v", counts, time.Since(start))
 		want := map[string]int{"total": len(legacy)}
 		for _, r := range legacy {
@@ -153,14 +154,20 @@ func TestIntegrationMonitorViews(t *testing.T) {
 			var first time.Duration
 			for page := 1; ; page++ {
 				start := time.Now()
-				rows, n, err := repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: view, Page: page, PerPage: 200}, idleBefore)
+				res, err := repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: view, Page: page, PerPage: 200}, idleBefore)
 				if page == 1 {
 					first = time.Since(start)
 				}
 				if err != nil {
 					return err
 				}
-				total = n
+				rows := res.Rows
+				total = res.Total
+				for k, v := range counts {
+					if res.Counts[k] != v {
+						t.Errorf("view %s page %d: counts[%s] = %d, want %d", view, page, k, res.Counts[k], v)
+					}
+				}
 				if len(rows) == 0 {
 					break
 				}
@@ -191,10 +198,11 @@ func TestIntegrationMonitorViews(t *testing.T) {
 		}
 
 		// a violation type narrows the view to participants with that kind
-		rows, n, err := repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: modelAttempt.ViewViolations, ViolationType: modelAttempt.ViolationDeviceChanged, Page: 1, PerPage: 100}, idleBefore)
+		res, err := repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: modelAttempt.ViewViolations, ViolationType: modelAttempt.ViolationDeviceChanged, Page: 1, PerPage: 100}, idleBefore)
 		if err != nil {
 			return err
 		}
+		rows, n := res.Rows, res.Total
 		for _, r := range rows {
 			if r.DeviceChanged == 0 {
 				t.Errorf("device_changed filter returned %+v", r)
@@ -205,11 +213,11 @@ func TestIntegrationMonitorViews(t *testing.T) {
 		}
 
 		// seat prefix scopes rows and counts
-		rows, n, err = repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: modelAttempt.ViewAll, Seat: "A-1", Page: 1, PerPage: 500}, idleBefore)
+		res, err = repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: modelAttempt.ViewAll, Seat: "A-1", Page: 1, PerPage: 500}, idleBefore)
 		if err != nil {
 			return err
 		}
-		sc, _ := repo.MonitorCounts(ctx, sess.ID, modelAttempt.MonitorFilter{Seat: "A-1"}, idleBefore)
+		rows, n, sc := res.Rows, res.Total, res.Counts
 		for _, r := range rows {
 			if r.Seat == nil || !strings.HasPrefix(*r.Seat, "A-1") {
 				t.Errorf("seat filter returned %v", r.Seat)
@@ -225,9 +233,21 @@ func TestIntegrationMonitorViews(t *testing.T) {
 			ids = append(ids, r.UserID)
 		}
 		start = time.Now()
-		watched, err := repo.MonitorWatch(ctx, sess.ID, append(ids, "0192a000-0000-7000-8000-00000000dead"), idleBefore)
+		wres, err := repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{UserIDs: append(ids, "0192a000-0000-7000-8000-00000000dead")}, idleBefore)
 		if err != nil {
 			return err
+		}
+		watched := wres.Rows
+		if wres.Counts["total"] != counts["total"] {
+			t.Errorf("watch counts %v, want the whole session %v", wres.Counts, counts)
+		}
+		// search narrows the page, not the counts
+		sres, err := repo.MonitorPage(ctx, sess.ID, modelAttempt.MonitorFilter{View: modelAttempt.ViewAll, Query: legacy[0].Username, Page: 1, PerPage: 10}, idleBefore)
+		if err != nil {
+			return err
+		}
+		if sres.Total < 1 || sres.Rows[0].Username == "" || !strings.Contains(sres.Rows[0].Username, legacy[0].Username) || sres.Counts["total"] != counts["total"] {
+			t.Errorf("search %q: total %d, first %+v, counts %v", legacy[0].Username, sres.Total, sres.Rows, sres.Counts)
 		}
 		t.Logf("watch 25 ids: %d rows in %v", len(watched), time.Since(start))
 		if len(watched) != 24 {

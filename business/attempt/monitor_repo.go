@@ -39,39 +39,72 @@ var violationColumns = map[string]string{
 	modelAttempt.ViolationDeviceChanged:  "device_changed",
 }
 
-// monitorRowsSQL is the WITH clause that defines "rows"; scope filters come from f.
-func monitorRowsSQL(sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) (string, []any) {
-	where := []string{"sp.session_id = ?"}
-	args := []any{sessionID}
+// MonitorResult is one poll of the monitor: the page, how many rows the view has, and the
+// session's counts, all from one query.
+type MonitorResult struct {
+	Rows   []MonitorAttempt
+	Total  int64
+	Counts map[string]int
+}
+
+// MonitorPage reads one page of a view, or the watched participants when f.UserIDs is set
+// (violators first, no paging), plus the counts, in a single statement: the session's rows
+// (scoped by group/seat only) are built once and feed the page, its total and the counts.
+func (r *AttemptRepo) MonitorPage(ctx context.Context, sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) (MonitorResult, error) {
+	view, ok := monitorViews[f.View]
+	if len(f.UserIDs) > 0 {
+		view, ok = monitorViews[modelAttempt.ViewViolations], true
+		view.where = "true"
+	}
+	if !ok {
+		return MonitorResult{}, fmt.Errorf("monitor page: unknown view %q", f.View)
+	}
+	filter, order := view.where, view.order
+	if col := violationColumns[f.ViolationType]; col != "" && f.View == modelAttempt.ViewViolations && len(f.UserIDs) == 0 {
+		filter, order = col+" > 0", col+" DESC, "+order
+	}
+	var filterArgs []any
+	if f.Query != "" {
+		p := dbpg.ContainsPattern(f.Query)
+		filter += " AND (full_name ILIKE ? OR username ILIKE ? OR seat ILIKE ?)"
+		filterArgs = append(filterArgs, p, p, p)
+	}
+	limit, offset := f.PerPage, (f.Page-1)*f.PerPage
+	if len(f.UserIDs) > 0 {
+		filter += " AND user_id IN ?"
+		filterArgs = append(filterArgs, f.UserIDs)
+		limit, offset = len(f.UserIDs), 0
+	}
+
+	scope := []string{"sp.session_id = ?"}
+	args := []any{sessionID, sessionID}
 	if f.GroupID != "" {
-		where = append(where, "EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = ? AND gm.user_id = sp.user_id)")
+		scope = append(scope, "EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = ? AND gm.user_id = sp.user_id)")
 		args = append(args, f.GroupID)
 	}
 	if f.Seat != "" {
-		where = append(where, "sp.seat ILIKE ?")
+		scope = append(scope, "sp.seat ILIKE ?")
 		args = append(args, dbpg.PrefixPattern(f.Seat))
 	}
-	if f.Query != "" {
-		p := dbpg.ContainsPattern(f.Query)
-		where = append(where, "(u.full_name ILIKE ? OR u.username ILIKE ? OR sp.seat ILIKE ?)")
-		args = append(args, p, p, p)
-	}
-	if len(f.UserIDs) > 0 {
-		where = append(where, "sp.user_id IN ?")
-		args = append(args, f.UserIDs)
-	}
+	args = append(args, idleBefore)
+	args = append(args, filterArgs...) // view total
+	args = append(args, filterArgs...) // page
+	args = append(args, limit, offset)
+
 	sql := `
-	WITH scope AS (
+	WITH latest AS (
+		SELECT DISTINCT ON (x.user_id) x.user_id, x.id, x.status, x.deadline_at, x.last_seen_at,
+		       x.active_device_id, x.final_score, x.submitted_at
+		FROM attempts x WHERE x.session_id = ?
+		ORDER BY x.user_id, x.attempt_no DESC
+	), scope AS (
 		SELECT sp.user_id, u.username, u.full_name, sp.seat, sp.attendance,
 		       a.id AS attempt_id, a.status, a.deadline_at, a.last_seen_at, a.active_device_id AS device_id,
 		       a.final_score, a.submitted_at
 		FROM exam_session_participants sp
 		JOIN users u ON u.id = sp.user_id
-		LEFT JOIN LATERAL (
-			SELECT * FROM attempts x WHERE x.session_id = sp.session_id AND x.user_id = sp.user_id
-			ORDER BY x.attempt_no DESC LIMIT 1
-		) a ON true
-		WHERE ` + strings.Join(where, " AND ") + `
+		LEFT JOIN latest a ON a.user_id = sp.user_id
+		WHERE ` + strings.Join(scope, " AND ") + `
 	), ev AS (
 		SELECT e.attempt_id,
 		       count(*) FILTER (WHERE e.type = 'FOCUS_LOST') AS focus_lost,
@@ -92,85 +125,48 @@ func monitorRowsSQL(sessionID string, f modelAttempt.MonitorFilter, idleBefore t
 		       ev.last_violation_at, ev.locked_at,
 		       coalesce(s.status = 'in_progress' AND s.last_seen_at < ?, false) AS idle
 		FROM scope s LEFT JOIN ev ON ev.attempt_id = s.attempt_id
-	)`
-	return sql, append(args, idleBefore)
-}
-
-// withDetails adds the per-attempt answer counts to an already limited row set.
-const withDetails = `
-	SELECT p.*,
+	), counts AS (
+		SELECT count(*) AS c_total,
+		       count(*) FILTER (WHERE attempt_id IS NULL) AS c_not_started,
+		       count(*) FILTER (WHERE status = 'in_progress') AS c_in_progress,
+		       count(*) FILTER (WHERE status = 'locked') AS c_locked,
+		       count(*) FILTER (WHERE status IN ('submitted', 'graded')) AS c_submitted,
+		       count(*) FILTER (WHERE idle) AS c_idle,
+		       count(*) FILTER (WHERE violations > 0) AS c_violations,
+		       (SELECT count(*) FROM rows WHERE ` + filter + `) AS view_total
+		FROM rows
+	), page AS (
+		SELECT * FROM rows WHERE ` + filter + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?
+	)
+	SELECT p.*, p.user_id AS page_user_id,
 	       coalesce((SELECT count(*) FROM attempt_items ai WHERE ai.attempt_id = p.attempt_id AND ai.response IS NOT NULL), 0) AS answered,
-	       coalesce((SELECT count(*) FROM attempt_items ai WHERE ai.attempt_id = p.attempt_id), 0) AS item_count
-	FROM (%s) p
-	ORDER BY %s`
-
-func (r *AttemptRepo) MonitorPage(ctx context.Context, sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) ([]MonitorAttempt, int64, error) {
-	view, ok := monitorViews[f.View]
-	if !ok {
-		return nil, 0, fmt.Errorf("monitor page: unknown view %q", f.View)
-	}
-	filter, order := view.where, view.order
-	if col := violationColumns[f.ViolationType]; col != "" && f.View == modelAttempt.ViewViolations {
-		filter, order = col+" > 0", col+" DESC, "+order
-	}
-	rowsSQL, args := monitorRowsSQL(sessionID, f, idleBefore)
-	inner := fmt.Sprintf("SELECT r.*, count(*) OVER () AS total FROM rows r WHERE %s ORDER BY %s LIMIT ? OFFSET ?", filter, order)
+	       coalesce((SELECT count(*) FROM attempt_items ai WHERE ai.attempt_id = p.attempt_id), 0) AS item_count,
+	       c.*
+	FROM counts c LEFT JOIN page p ON true
+	ORDER BY ` + order
+	// counts LEFT JOIN page: one row with only the counts when the page is empty
 	var out []struct {
 		MonitorAttempt
-		Total int64
+		PageUserID                                                                *string
+		CTotal, CNotStarted, CInProgress, CLocked, CSubmitted, CIdle, CViolations int
+		ViewTotal                                                                 int64
 	}
-	err := dbpg.Conn(ctx, r.db).Raw(rowsSQL+fmt.Sprintf(withDetails, inner, order),
-		append(args, f.PerPage, (f.Page-1)*f.PerPage)...).Scan(&out).Error
-	if err != nil {
-		return nil, 0, wrap(err, "monitor page")
+	if err := dbpg.Conn(ctx, r.db).Raw(sql, args...).Scan(&out).Error; err != nil {
+		return MonitorResult{}, wrap(err, "monitor page")
 	}
-	if len(out) == 0 {
-		if f.Page <= 1 {
-			return []MonitorAttempt{}, 0, nil
+	res := MonitorResult{Rows: []MonitorAttempt{}, Counts: map[string]int{}}
+	for i, o := range out {
+		if i == 0 {
+			res.Total = o.ViewTotal
+			res.Counts = map[string]int{
+				"total": o.CTotal, "not_started": o.CNotStarted, "in_progress": o.CInProgress, "locked": o.CLocked,
+				"submitted": o.CSubmitted, "idle": o.CIdle, "violations": o.CViolations,
+			}
 		}
-		// past the last page: still report how many rows the view has
-		var total int64
-		err := dbpg.Conn(ctx, r.db).Raw(rowsSQL+fmt.Sprintf(" SELECT count(*) FROM rows WHERE %s", filter), args...).Scan(&total).Error
-		return []MonitorAttempt{}, total, wrap(err, "monitor page total")
+		if o.PageUserID == nil {
+			continue // empty page
+		}
+		res.Rows = append(res.Rows, o.MonitorAttempt)
 	}
-	rows := make([]MonitorAttempt, len(out))
-	for i := range out {
-		rows[i] = out[i].MonitorAttempt
-	}
-	return rows, out[0].Total, nil
-}
-
-func (r *AttemptRepo) MonitorWatch(ctx context.Context, sessionID string, userIDs []string, idleBefore time.Time) ([]MonitorAttempt, error) {
-	if len(userIDs) == 0 {
-		return []MonitorAttempt{}, nil
-	}
-	order := monitorViews[modelAttempt.ViewViolations].order
-	rowsSQL, args := monitorRowsSQL(sessionID, modelAttempt.MonitorFilter{UserIDs: userIDs}, idleBefore)
-	out := []MonitorAttempt{}
-	err := dbpg.Conn(ctx, r.db).Raw(rowsSQL+fmt.Sprintf(withDetails, "SELECT * FROM rows", order), args...).Scan(&out).Error
-	return out, wrap(err, "monitor watch")
-}
-
-func (r *AttemptRepo) MonitorCounts(ctx context.Context, sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) (map[string]int, error) {
-	scope := modelAttempt.MonitorFilter{GroupID: f.GroupID, Seat: f.Seat} // counts ignore search, view and ids
-	rowsSQL, args := monitorRowsSQL(sessionID, scope, idleBefore)
-	var c struct {
-		Total, NotStarted, InProgress, Locked, Submitted, Idle, Violations int
-	}
-	err := dbpg.Conn(ctx, r.db).Raw(rowsSQL+`
-	SELECT count(*) AS total,
-	       count(*) FILTER (WHERE attempt_id IS NULL) AS not_started,
-	       count(*) FILTER (WHERE status = 'in_progress') AS in_progress,
-	       count(*) FILTER (WHERE status = 'locked') AS locked,
-	       count(*) FILTER (WHERE status IN ('submitted', 'graded')) AS submitted,
-	       count(*) FILTER (WHERE idle) AS idle,
-	       count(*) FILTER (WHERE violations > 0) AS violations
-	FROM rows`, args...).Scan(&c).Error
-	if err != nil {
-		return nil, wrap(err, "monitor counts")
-	}
-	return map[string]int{
-		"total": c.Total, "not_started": c.NotStarted, "in_progress": c.InProgress, "locked": c.Locked,
-		"submitted": c.Submitted, "idle": c.Idle, "violations": c.Violations,
-	}, nil
+	return res, nil
 }

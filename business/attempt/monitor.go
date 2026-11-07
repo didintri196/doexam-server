@@ -46,16 +46,11 @@ func (s *AttemptService) MonitorList(ctx context.Context, p modelAuth.Principal,
 		if err != nil {
 			return err
 		}
-		idleBefore := now.Add(-monitorIdleAfter)
-		rows, n, err := s.storer.MonitorPage(ctx, sessionID, f, idleBefore)
+		res, err := s.storer.MonitorPage(ctx, sessionID, f, now.Add(-monitorIdleAfter))
 		if err != nil {
 			return err
 		}
-		counts, err := s.storer.MonitorCounts(ctx, sessionID, f, idleBefore)
-		if err != nil {
-			return err
-		}
-		out, total = monitorDTO(sess, now, counts, rows), n
+		out, total = monitorDTO(sess, now, res.Counts, res.Rows), res.Total
 		return nil
 	})
 	if err != nil {
@@ -93,16 +88,15 @@ func (s *AttemptService) MonitorWatch(ctx context.Context, p modelAuth.Principal
 		if err != nil {
 			return err
 		}
-		idleBefore := now.Add(-monitorIdleAfter)
-		rows, err := s.storer.MonitorWatch(ctx, sessionID, ids, idleBefore)
+		f := modelAttempt.MonitorFilter{UserIDs: ids}
+		if len(ids) == 0 {
+			f = modelAttempt.MonitorFilter{View: modelAttempt.ViewAll, Page: 1, PerPage: 0} // counts only
+		}
+		res, err := s.storer.MonitorPage(ctx, sessionID, f, now.Add(-monitorIdleAfter))
 		if err != nil {
 			return err
 		}
-		counts, err := s.storer.MonitorCounts(ctx, sessionID, modelAttempt.MonitorFilter{}, idleBefore)
-		if err != nil {
-			return err
-		}
-		out = monitorDTO(sess, now, counts, rows)
+		out = monitorDTO(sess, now, res.Counts, res.Rows)
 		return nil
 	})
 	if err != nil {

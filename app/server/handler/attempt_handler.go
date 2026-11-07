@@ -108,11 +108,15 @@ func (h *AttemptHandler) Monitor(c *fiber.Ctx) error {
 	return SuccessResponse(c, fiber.StatusOK, "monitor retrieved", dto)
 }
 
+// monitorPerPage: the monitor shows 10 cards per page (DOCS/PLAN/15-MONITOR-KARTU.md); a
+// larger per_page is capped so no poll ever loads more than one page of cards.
+const monitorPerPage = 10
+
 // MonitorList handles GET /api/v1/sessions/:id/monitor/list?view&violation_type&group_id&seat&q&page&per_page:
 // one page of a monitor view, paged in SQL (DOCS/PLAN/15-MONITOR-KARTU.md).
 func (h *AttemptHandler) MonitorList(c *fiber.Ctx) error {
 	logger := middleware.GetLogger(c)
-	page, perPage, err := parsePage(c)
+	page, perPage, err := parsePageSized(c, monitorPerPage, monitorPerPage)
 	if err != nil {
 		return handleError(c, logger, "invalid pagination", err)
 	}

@@ -145,13 +145,11 @@ type AttemptStorer interface {
 	// Rows locked by another transaction are skipped (that request ticks them itself).
 	OverdueAttempts(ctx context.Context, sessionID string, cutoff time.Time) ([]modelAttempt.AttemptEntity, error)
 	Monitor(ctx context.Context, sessionID string) ([]MonitorAttempt, error)
-	// MonitorPage returns one page of a monitor view and how many rows match it. Only the
-	// page's rows get the costly per-attempt details (answered, item count).
-	MonitorPage(ctx context.Context, sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) ([]MonitorAttempt, int64, error)
-	// MonitorWatch returns the given participants (at most MaxWatch), violators first.
-	MonitorWatch(ctx context.Context, sessionID string, userIDs []string, idleBefore time.Time) ([]MonitorAttempt, error)
-	// MonitorCounts counts the session's participants per state within f.GroupID/f.Seat.
-	MonitorCounts(ctx context.Context, sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) (map[string]int, error)
+	// MonitorPage returns one page of a monitor view (or the watched participants when
+	// f.UserIDs is set), how many rows the view has, and the session's counts within
+	// f.GroupID/f.Seat, in one query. Only the page's rows get the costly per-attempt
+	// details (answered, item count).
+	MonitorPage(ctx context.Context, sessionID string, f modelAttempt.MonitorFilter, idleBefore time.Time) (MonitorResult, error)
 	MyAttempts(ctx context.Context, userID string) ([]modelAttempt.MyAttemptDTO, error)
 }
 

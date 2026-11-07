@@ -17,9 +17,15 @@ const (
 // parsePage reads ?page= and ?per_page=. Missing values use defaults; per_page above
 // maxPerPage is capped. Non-numeric or < 1 values are a validation error.
 func parsePage(c *fiber.Ctx) (page, perPage int, err error) {
+	return parsePageSized(c, defaultPerPage, maxPerPage)
+}
+
+// parsePageSized is parsePage with an endpoint's own default and cap (e.g. the monitor's
+// 10 cards per page).
+func parsePageSized(c *fiber.Ctx, def, max int) (page, perPage int, err error) {
 	v := errr.Validation{}
 	page = queryInt(c, "page", 1, v)
-	perPage = min(queryInt(c, "per_page", defaultPerPage, v), maxPerPage)
+	perPage = min(queryInt(c, "per_page", def, v), max)
 	return page, perPage, v.Err()
 }
 

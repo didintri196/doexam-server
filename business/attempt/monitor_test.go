@@ -22,7 +22,6 @@ type monitorStore struct {
 	AttemptStorer
 	cutoffs     []time.Time
 	pages       []modelAttempt.MonitorFilter
-	countScopes []modelAttempt.MonitorFilter
 	idleBefores []time.Time
 	watched     []string
 }
@@ -61,21 +60,16 @@ func TestMonitorLocksOnlyOverdueAttempts(t *testing.T) {
 	}
 }
 
-func (f *monitorStore) MonitorPage(_ context.Context, _ string, filter modelAttempt.MonitorFilter, idleBefore time.Time) ([]MonitorAttempt, int64, error) {
+func (f *monitorStore) MonitorPage(_ context.Context, _ string, filter modelAttempt.MonitorFilter, idleBefore time.Time) (MonitorResult, error) {
 	f.pages = append(f.pages, filter)
 	f.idleBefores = append(f.idleBefores, idleBefore)
+	counts := map[string]int{"total": 42, "violations": 3}
+	if len(filter.UserIDs) > 0 {
+		f.watched = filter.UserIDs
+		return MonitorResult{Rows: []MonitorAttempt{{UserID: filter.UserIDs[0]}}, Total: 1, Counts: counts}, nil
+	}
 	st := modelAttempt.StatusInProgress
-	return []MonitorAttempt{{UserID: "u1", Status: &st, FocusLost: 2, DeviceChanged: 1, Idle: true}}, 42, nil
-}
-
-func (f *monitorStore) MonitorWatch(_ context.Context, _ string, ids []string, _ time.Time) ([]MonitorAttempt, error) {
-	f.watched = ids
-	return []MonitorAttempt{{UserID: ids[0]}}, nil
-}
-
-func (f *monitorStore) MonitorCounts(_ context.Context, _ string, filter modelAttempt.MonitorFilter, _ time.Time) (map[string]int, error) {
-	f.countScopes = append(f.countScopes, filter)
-	return map[string]int{"total": 42, "violations": 3}, nil
+	return MonitorResult{Rows: []MonitorAttempt{{UserID: "u1", Status: &st, FocusLost: 2, DeviceChanged: 1, Idle: true}}, Total: 42, Counts: counts}, nil
 }
 
 func monitorFixture() (*AttemptService, *monitorStore, modelAuth.Principal, time.Time) {
@@ -96,8 +90,8 @@ func TestMonitorList(t *testing.T) {
 	if len(store.cutoffs) != 1 || !store.cutoffs[0].Equal(now.Add(-syncGrace)) {
 		t.Fatalf("overdue attempts not ticked first: %v", store.cutoffs)
 	}
-	if store.pages[0].Seat != "A-" || !store.idleBefores[0].Equal(now.Add(-monitorIdleAfter)) || store.countScopes[0].Seat != "A-" {
-		t.Fatalf("filter passed as %+v, idleBefore %v, counts scope %+v", store.pages[0], store.idleBefores[0], store.countScopes[0])
+	if store.pages[0].Seat != "A-" || !store.idleBefores[0].Equal(now.Add(-monitorIdleAfter)) {
+		t.Fatalf("filter passed as %+v, idleBefore %v", store.pages[0], store.idleBefores[0])
 	}
 	r := out.Rows[0]
 	if total != 42 || out.Counts["violations"] != 3 || r.Violations != 3 || r.ViolationCounts[modelAttempt.ViolationFocusLost] != 2 ||
@@ -139,8 +133,12 @@ func TestMonitorWatch(t *testing.T) {
 	if len(store.watched) != 2 || store.watched[0] != strings.ToLower(a) || store.watched[1] != b {
 		t.Fatalf("watched = %v (want lowercased, trimmed, deduplicated)", store.watched)
 	}
-	if store.countScopes[0].Seat != "" || out.Counts["total"] != 42 || len(store.cutoffs) != 1 {
-		t.Fatalf("counts scope %+v, out %+v", store.countScopes[0], out)
+	if store.pages[0].Seat != "" || out.Counts["total"] != 42 || len(store.cutoffs) != 1 {
+		t.Fatalf("watch filter %+v, out %+v", store.pages[0], out)
+	}
+	// an empty list still returns the counts
+	if out, err := svc.MonitorWatch(context.Background(), p, monitorSessionID, modelAttempt.WatchInput{}, modelAudit.Client{}); err != nil || out.Counts["total"] != 42 || store.pages[1].View != modelAttempt.ViewAll || store.pages[1].PerPage != 0 {
+		t.Fatalf("empty watch: %v %+v %+v", err, out, store.pages[1])
 	}
 
 	tooMany := make([]string, modelAttempt.MaxWatch+1)

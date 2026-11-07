@@ -41,3 +41,20 @@ func TestParsePage(t *testing.T) {
 		})
 	}
 }
+
+func TestMonitorPageSize(t *testing.T) {
+	for query, want := range map[string]int{"": 10, "?per_page=5": 5, "?per_page=50": 10} {
+		app := fiber.New()
+		var perPage int
+		app.Get("/", func(c *fiber.Ctx) error {
+			_, perPage, _ = parsePageSized(c, monitorPerPage, monitorPerPage)
+			return nil
+		})
+		if _, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/"+query, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if perPage != want {
+			t.Errorf("%q: per_page = %d, want %d", query, perPage, want)
+		}
+	}
+}
