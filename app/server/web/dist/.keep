@@ -1,0 +1,2 @@
+The frontend build (apps/client dist/all) is copied here before `go build` to embed it.
+Without it the binary serves the API only.

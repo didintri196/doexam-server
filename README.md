@@ -19,12 +19,18 @@ Backend DoExam — platform ujian open source (CBT & CAT).
 | Logging | log/slog (structured) |
 | Architecture | Hexagonal (Ports & Adapters) |
 
+## Frontend ter-embed (binary tunggal)
+
+Binary bisa membawa frontend sendiri: hasil build `apps/client` (`dist/all`) disalin ke `app/server/web/dist/` sebelum `go build`, lalu disajikan di `/exam/` (peserta) dan `/app/` (panel), dengan `/` dialihkan ke `/exam/`. Header cache dan keamanannya sama dengan config nginx client (CSP per entry, aset ber-hash di-cache 1 tahun, `index.html`/`sw.js` `no-cache`). Bila build `*.br`/`*.gz` tersedia, file terkompres itu yang dikirim.
+
+Tanpa build (hanya placeholder `dist/.keep`), binary berjalan sebagai **API saja**. Ini dipakai untuk development dan image API-only. Perakitan binary lengkap dilakukan oleh repo payung `doexam`.
+
 ## Quick Start
 
 ```bash
 cp .env.example .env
 docker compose up -d postgres
-make db/migrations/up    # butuh golang-migrate: brew install golang-migrate
+make db/migrations/up    # = go run ./app/server migrate up (migrasi ter-embed di binary)
 make run/api
 ```
 
@@ -277,3 +283,7 @@ Target `db/migrations/*` membaca `DATABASE_URL` dari `.env` (atau environment).
 | `METRICS_ADDR` | `127.0.0.1:9464` | Listener `/metrics` (Prometheus), terpisah dari port API. `off` = mati. Katalog metrik: [METRICS.md](METRICS.md) |
 | `METRICS_TOKEN` | _(kosong)_ | Bila diisi, scrape wajib `Authorization: Bearer <token>`. Wajib di production bila `METRICS_ADDR` bukan loopback |
 | `OTEL_METRICS_EXPORTER` | `none` | `otlp` = metrik juga dikirim ke `OTEL_EXPORTER_OTLP_ENDPOINT` |
+
+## Lisensi
+
+DoExam dirilis di bawah [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Anda bebas memakai, mempelajari, mengubah, dan mendistribusikannya. Bila versi yang diubah dijalankan sebagai layanan untuk pengguna lain, kode sumbernya wajib dibuka untuk pengguna tersebut.

@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"doexam/app/server/handler"
+	"doexam/app/server/web"
 	"doexam/business/attempt"
 	"doexam/business/auth"
 	"doexam/business/exam"
@@ -312,6 +313,14 @@ func PrepareRoute(app *fiber.App, cfg config.DoExamConfig, db *gorm.DB, logger *
 	exams.Get("/:id/analysis", reportHandler.Analysis)
 	exams.Post("/:id/analysis", reportHandler.Recompute)
 	attempts.Get("/:id/report", reportHandler.AttemptReport)
+
+	// Frontend embedded in the binary (exam client /exam/, panel /app/), after the API so
+	// it never shadows a route. Without a build the binary serves the API only.
+	if web.Register(app, web.Dist()) {
+		logger.InfoContext(context.Background(), "frontend: embedded (/exam/, /app/)")
+	} else {
+		logger.InfoContext(context.Background(), "frontend: not embedded, API only")
+	}
 
 	shutdown := func(ctx context.Context) error {
 		err := errors.Join(importSvc.Shutdown(ctx), attemptSvc.Shutdown(ctx))

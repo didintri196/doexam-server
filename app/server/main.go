@@ -26,6 +26,7 @@ var version = "dev"
 func main() {
 	// ── 1. Load config ──────────────────────────────────────────
 	cfg := config.Load()
+	exitIfCommand(cfg.DoExam) // migrate / version / help; returns for serve
 
 	if err := cfg.DoExam.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)

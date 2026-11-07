@@ -59,17 +59,17 @@ db/migrations/new:
 	@echo 'Creating migration files for ${name}...'
 	migrate create -seq -ext=.sql -dir=./migrations ${name}
 
-## db/migrations/up: apply all up migrations
+## db/migrations/up: apply all up migrations (embedded in the binary; no migrate CLI needed)
 db/migrations/up:
-	migrate -path ./migrations -database '${DATABASE_URL}' up
+	go run ./app/server migrate up
 
 ## db/migrations/down: roll back the last migration
 db/migrations/down:
-	migrate -path ./migrations -database '${DATABASE_URL}' down 1
+	go run ./app/server migrate down 1
 
 ## db/migrations/version: show the current migration version
 db/migrations/version:
-	migrate -path ./migrations -database '${DATABASE_URL}' version
+	go run ./app/server migrate version
 
 ## docker-build: build docker image
 docker-build:
